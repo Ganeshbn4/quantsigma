@@ -1,0 +1,57 @@
+{
+  "name": "quantsigma-backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.0",
+    "cors": "^2.8.5"
+  }
+}
+```
+4. Click **"Commit changes"** → **"Commit changes"**
+
+---
+
+## Step 3 — Create `frontend/index.html`
+
+1. Click **"Add file"** → **"Create new file"**
+2. Filename:
+```
+frontend/index.html
+```
+3. Paste your **complete website HTML** (the full code from the artifact above)
+4. Click **"Commit changes"** → **"Commit changes"**
+
+---
+
+## Step 4 — Create `backend/.gitignore`
+
+1. Click **"Add file"** → **"Create new file"**
+2. Filename:
+```
+backend/.gitignore
+```
+3. Paste:
+```
+node_modules/
+.env
+```
+4. Click **"Commit changes"** → **"Commit changes"**
+
+---
+
+## After All 4 Files Are Created
+
+Your repo should look exactly like this:
+```
+quantsigma/
+├── backend/
+│   ├── server.js
+│   ├── package.json
+│   └── .gitignore
+└── frontend/
+    └── index.html
