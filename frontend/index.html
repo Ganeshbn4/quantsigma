@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Quant Sigma — Real-Time Trading Intelligence</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#07090f;--bg2:#0a0d16;--bg3:#0d1120;--card:#0f1422;--card2:#121828;
+  --border:#1a2235;--border2:#1e2a40;--accent:#00c4e8;--accent2:#6d28d9;
+  --text:#d1d9e8;--text2:#7b8db0;--text3:#3d4f6e;
+  --green:#00e676;--red:#ff4444;--yellow:#f59e0b;--orange:#f97316;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'Inter','Segoe UI',system-ui,sans-serif;overflow-x:hidden}
+a{text-decoration:none;color:inherit}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(7,9,15,0.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);height:60px}
+.nav-inner{max-width:1280px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:100%;padding:0 28px}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-mark{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;color:#fff;letter-spacing:-1px}
+.logo-name{font-size:1.05rem;font-weight:800;color:#fff;letter-spacing:.3px}
+.logo-name span{color:var(--accent)}
+.nav-links{display:flex;align-items:center;gap:26px}
+.nav-links a{color:var(--text2);font-size:.82rem;font-weight:500;letter-spacing:.3px;transition:.15s}
+.nav-links a:hover{color:var(--text)}
+.nav-actions{display:flex;gap:8px;align-items:center}
+.btn{padding:7px 16px;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer;border:none;transition:.15s;letter-spacing:.2px}
+.btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--text2)}
+.btn-ghost:hover{border-color:var(--text3);color:var(--text)}
+.btn-primary{background:var(--accent);color:#000;font-weight:700}
+.btn-primary:hover{background:#00d8ff}
+.btn-lg{padding:11px 26px;font-size:.88rem;border-radius:7px}
+.btn-outline{background:transparent;border:1.5px solid var(--accent);color:var(--accent)}
+.btn-outline:hover{background:rgba(0,196,232,.08)}
+
+/* HERO */
+.hero{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:80px 28px 60px;position:relative;overflow:hidden}
+.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse 900px 500px at 50% 30%,rgba(0,196,232,.055) 0%,transparent 70%);pointer-events:none}
+.hero-inner{max-width:760px;text-align:center}
+.hero-eyebrow{display:inline-flex;align-items:center;gap:7px;background:rgba(0,196,232,.07);border:1px solid rgba(0,196,232,.18);border-radius:50px;padding:5px 14px;font-size:.72rem;color:var(--accent);margin-bottom:28px;letter-spacing:.5px;font-weight:600;text-transform:uppercase}
+.pulse{width:5px;height:5px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+.hero h1{font-size:clamp(2.1rem,5.5vw,4rem);font-weight:900;line-height:1.1;color:#fff;margin-bottom:20px;letter-spacing:-1px}
+.hero h1 em{font-style:normal;background:linear-gradient(120deg,var(--accent),#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero-desc{font-size:1rem;color:var(--text2);line-height:1.75;max-width:540px;margin:0 auto 36px}
+.hero-cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:56px}
+.hero-metrics{display:flex;gap:44px;justify-content:center;flex-wrap:wrap;padding-top:40px;border-top:1px solid var(--border)}
+.metric-val{font-size:1.7rem;font-weight:900;color:#fff}
+.metric-lbl{font-size:.72rem;color:var(--text3);letter-spacing:.5px;margin-top:2px;text-transform:uppercase}
+
+/* SECTIONS */
+section{padding:88px 28px}
+.section-max{max-width:1280px;margin:0 auto}
+.section-header{text-align:center;margin-bottom:52px}
+.eyebrow{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent);background:rgba(0,196,232,.07);border:1px solid rgba(0,196,232,.15);padding:4px 12px;border-radius:4px;margin-bottom:14px}
+.section-header h2{font-size:clamp(1.5rem,3vw,2.2rem);font-weight:800;color:#fff;margin-bottom:12px;letter-spacing:-.5px}
+.section-header p{color:var(--text2);font-size:.93rem;line-height:1.7;max-width:520px;margin:0 auto}
+
+/* SCANNER */
+.scanner-wrap{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;max-width:1100px;margin:0 auto}
+.scanner-topbar{background:var(--bg3);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.scanner-title-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.live-indicator{display:flex;align-items:center;gap:5px;font-size:.7rem;font-weight:700;color:var(--green);letter-spacing:.5px;text-transform:uppercase;background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.2);padding:4px 10px;border-radius:4px}
+.live-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:pulse 1.4s infinite}
+.scanner-meta{font-size:.75rem;color:var(--text3)}
+.countdown-pill{display:flex;align-items:center;gap:6px;font-size:.72rem;font-weight:600;color:var(--text2)}
+.cd-num{font-size:1.1rem;font-weight:800;color:var(--green);min-width:28px;text-align:right;transition:color .3s}
+.cd-warn{color:var(--red)!important}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border)}
+.stat-cell{padding:12px 20px;border-right:1px solid var(--border)}
+.stat-cell:last-child{border-right:none}
+.stat-cell .sv{font-size:1rem;font-weight:800;color:#fff}
+.stat-cell .sl{font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+thead tr{background:var(--bg3);border-bottom:1px solid var(--border)}
+th{padding:9px 16px;text-align:right;color:var(--text3);font-size:.67rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;white-space:nowrap}
+th:first-child,th:nth-child(2){text-align:left}
+tbody tr{border-bottom:1px solid rgba(26,34,53,.6);transition:background .15s}
+tbody tr:hover{background:rgba(0,196,232,.03)}
+tbody tr:last-child{border-bottom:none}
+td{padding:13px 16px;text-align:right;white-space:nowrap}
+td:first-child,td:nth-child(2){text-align:left}
+.rank-badge{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800}
+.coin-cell{display:flex;align-items:center;gap:9px}
+.coin-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:800}
+.coin-sym{font-weight:800;font-size:.88rem;color:#fff}
+.coin-type{font-size:.65rem;color:var(--text3)}
+.price-cell{font-weight:700;color:var(--text)}
+.chg-badge{display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:5px;font-size:.75rem;font-weight:700;border:1px solid}
+.up{color:var(--green);background:rgba(0,230,118,.08);border-color:rgba(0,230,118,.2)}
+.dn{color:var(--red);background:rgba(255,68,68,.08);border-color:rgba(255,68,68,.2)}
+.vol-chg{font-size:.8rem;font-weight:600}
+.score-cell{display:inline-flex;align-items:center;justify-content:flex-end;padding:3px 10px;border-radius:5px;font-size:.8rem;font-weight:800;border:1.5px solid;min-width:64px}
+.qvol{font-size:.78rem;color:var(--text2)}
+.scanner-footer{background:var(--bg3);border-top:1px solid var(--border);padding:10px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.scanner-footer span{font-size:.7rem;color:var(--text3)}
+.scanner-note{font-size:.68rem;color:rgba(255,159,67,.6);background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.1);padding:3px 10px;border-radius:4px}
+.loading-state{padding:60px;text-align:center;color:var(--text2);font-size:.85rem}
+.spin{display:inline-block;animation:spin 1s linear infinite;font-size:1.5rem;margin-bottom:10px}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+.warming-note{font-size:.72rem;color:var(--yellow);margin-top:6px}
+.error-state{padding:40px;text-align:center;color:var(--red);font-size:.82rem}
+
+/* FEATURES */
+.feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:18px}
+.feat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:26px;transition:.2s}
+.feat-card:hover{border-color:var(--border2)}
+.feat-icon{font-size:1.4rem;margin-bottom:14px}
+.feat-card h3{font-size:.92rem;font-weight:700;color:#fff;margin-bottom:8px}
+.feat-card p{font-size:.82rem;color:var(--text2);line-height:1.65}
+
+/* PRICING */
+.pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:18px;max-width:960px;margin:0 auto}
+.price-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:30px;position:relative}
+.price-card.featured{border-color:rgba(0,196,232,.4);background:linear-gradient(160deg,rgba(0,196,232,.04),var(--card))}
+.featured-tag{position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:var(--accent);color:#000;font-size:.67rem;font-weight:800;letter-spacing:.8px;padding:3px 14px;border-radius:3px;text-transform:uppercase;white-space:nowrap}
+.plan-label{font-size:.67rem;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3);margin-bottom:10px}
+.plan-amount{font-size:2.1rem;font-weight:900;color:#fff;line-height:1}
+.plan-amount sup{font-size:1rem;font-weight:600;color:var(--text2);vertical-align:super}
+.plan-cycle{font-size:.75rem;color:var(--text3);margin-bottom:6px}
+.plan-tagline{font-size:.78rem;color:var(--text2);margin-bottom:22px;padding-bottom:18px;border-bottom:1px solid var(--border)}
+.plan-features{list-style:none;margin-bottom:24px}
+.plan-features li{display:flex;align-items:flex-start;gap:8px;font-size:.8rem;color:var(--text2);padding:6px 0;border-bottom:1px solid rgba(26,34,53,.5)}
+.plan-features li:last-child{border:none}
+.plan-features li.off{color:var(--text3)}
+.ck{color:var(--green);font-size:.75rem;margin-top:1px}
+.xx{color:var(--text3);font-size:.75rem;margin-top:1px}
+.plan-btn{width:100%;padding:11px;border-radius:6px;font-size:.82rem;font-weight:700;cursor:pointer;border:none;transition:.15s;letter-spacing:.3px}
+.plan-btn-primary{background:var(--accent);color:#000}
+.plan-btn-primary:hover{background:#00d8ff}
+.plan-btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text2)}
+.plan-btn-outline:hover{border-color:var(--text3);color:var(--text)}
+
+/* MENTORSHIP */
+.mentor-layout{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:start;max-width:1100px;margin:0 auto}
+.mentor-left h2{font-size:clamp(1.5rem,3vw,2.1rem);font-weight:900;color:#fff;margin-bottom:14px;line-height:1.2;letter-spacing:-.5px}
+.mentor-left p{font-size:.88rem;color:var(--text2);line-height:1.72;margin-bottom:24px}
+.cohort-box{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:.78rem;color:var(--text2);margin-bottom:24px}
+.cohort-box strong{color:var(--text)}
+.mentor-cta{display:flex;gap:10px;flex-wrap:wrap}
+.module-list{display:grid;gap:12px}
+.module{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;display:flex;gap:14px;align-items:flex-start}
+.mod-num{width:32px;height:32px;min-width:32px;border-radius:6px;background:linear-gradient(135deg,var(--accent2),var(--accent));display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;color:#fff}
+.module h4{font-size:.85rem;font-weight:700;color:#fff;margin-bottom:4px}
+.module p{font-size:.77rem;color:var(--text2);line-height:1.5}
+
+/* TESTIMONIALS */
+.test-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;max-width:1000px;margin:0 auto}
+.test-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:24px}
+.stars{color:var(--yellow);font-size:.8rem;margin-bottom:12px;letter-spacing:2px}
+.test-card p{font-size:.82rem;color:var(--text2);line-height:1.65;margin-bottom:18px}
+.tester{display:flex;align-items:center;gap:10px}
+.avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:800;color:#fff}
+.tester strong{font-size:.82rem;color:#fff;display:block}
+.tester span{font-size:.7rem;color:var(--text3)}
+
+/* CTA BAND */
+.cta-band{background:linear-gradient(120deg,rgba(0,196,232,.06),rgba(109,40,217,.06));border:1px solid var(--border);border-radius:12px;padding:60px 40px;text-align:center;max-width:860px;margin:0 auto}
+.cta-band h2{font-size:clamp(1.5rem,3vw,2.2rem);font-weight:900;color:#fff;margin-bottom:12px;letter-spacing:-.5px}
+.cta-band p{color:var(--text2);font-size:.9rem;margin-bottom:28px}
+.cta-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+
+/* FOOTER */
+footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28px 28px}
+.footer-max{max-width:1280px;margin:0 auto}
+.footer-top{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:44px;margin-bottom:44px}
+.footer-brand p{font-size:.78rem;color:var(--text3);line-height:1.7;margin:12px 0 16px}
+.footer-domain{font-size:.72rem;color:var(--text3);font-family:monospace}
+.disclaimer-box{background:rgba(255,68,68,.04);border:1px solid rgba(255,68,68,.1);border-radius:6px;padding:12px 14px;margin-top:14px;font-size:.7rem;color:var(--text3);line-height:1.6}
+.disclaimer-box strong{color:rgba(255,68,68,.7)}
+.footer-col h5{font-size:.72rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text2);margin-bottom:14px}
+.footer-col a{display:block;font-size:.78rem;color:var(--text3);margin-bottom:8px;transition:.15s}
+.footer-col a:hover{color:var(--text2)}
+.footer-bottom{border-top:1px solid var(--border);padding-top:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.footer-bottom p{font-size:.72rem;color:var(--text3)}
+
+/* MODAL */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:200;display:none;align-items:center;justify-content:center;padding:20px}
+.overlay.open{display:flex}
+.modal{background:var(--card);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:400px;padding:32px;position:relative}
+.modal-x{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--text3);font-size:1.3rem;cursor:pointer;line-height:1;padding:2px 6px}
+.modal-x:hover{color:var(--text)}
+.modal-tabs{display:flex;background:var(--bg3);border-radius:6px;padding:3px;margin-bottom:24px;border:1px solid var(--border)}
+.mtab{flex:1;padding:7px;border:none;background:transparent;color:var(--text3);font-size:.8rem;font-weight:600;cursor:pointer;border-radius:4px;transition:.15s}
+.mtab.on{background:var(--accent);color:#000}
+.modal h2{font-size:1.15rem;font-weight:800;color:#fff;margin-bottom:4px}
+.modal-sub{font-size:.78rem;color:var(--text2);margin-bottom:22px}
+.fgrp{margin-bottom:14px}
+.fgrp label{display:block;font-size:.72rem;font-weight:600;color:var(--text2);margin-bottom:5px;letter-spacing:.3px}
+.fgrp input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:9px 12px;color:var(--text);font-size:.85rem;outline:none;transition:.15s}
+.fgrp input:focus{border-color:var(--accent)}
+.fgrp input::placeholder{color:var(--text3)}
+.modal-submit{width:100%;padding:11px;border-radius:6px;font-size:.88rem;font-weight:700;cursor:pointer;border:none;background:var(--accent);color:#000;margin-top:6px;transition:.15s;letter-spacing:.3px}
+.modal-submit:hover{background:#00d8ff}
+.modal-submit:disabled{opacity:.5;cursor:not-allowed}
+.form-note{font-size:.7rem;color:var(--text3);text-align:center;margin-top:10px}
+.form-err{font-size:.75rem;color:var(--red);margin-bottom:10px;padding:8px 10px;background:rgba(255,68,68,.07);border:1px solid rgba(255,68,68,.15);border-radius:5px;display:none}
+.form-ok{font-size:.75rem;color:var(--green);margin-bottom:10px;padding:8px 10px;background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.15);border-radius:5px;display:none}
+
+/* TOAST */
+.toast{position:fixed;bottom:24px;right:24px;z-index:300;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:12px 18px;font-size:.82rem;color:var(--text);display:none;align-items:center;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.toast.show{display:flex}
+
+@media(max-width:900px){
+  .mentor-layout{grid-template-columns:1fr}
+  .footer-top{grid-template-columns:1fr 1fr}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:640px){
+  .nav-links{display:none}
+  .footer-top{grid-template-columns:1fr}
+  .hero-metrics{gap:20px}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="logo">
+      <div class="logo-mark">QΣ</div>
+      <span class="logo-name">Quant<span>Sigma</span></span>
+    </a>
+    <div class="nav-links">
+      <a href="#scanner">Scanner</a>
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#mentorship">Mentorship</a>
+    </div>
+    <div class="nav-actions">
+      <button class="btn btn-ghost" onclick="openModal('login')">Log In</button>
+      <button class="btn btn-primary" onclick="openModal('signup')">Start Free Trial</button>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero" id="home">
+  <div class="hero-bg"></div>
+  <div class="hero-inner">
+    <div class="hero-eyebrow"><span class="pulse"></span>Live Scanner · Binance Futures · Crypto Only</div>
+    <h1>Real-Time Trading Intelligence<br/>for <em>Serious Traders</em></h1>
+    <p class="hero-desc">Institutional-grade momentum scanners, volume analytics, and probability scoring — built for data-driven decision makers. Not advice. Just edge.</p>
+    <div class="hero-cta">
+      <button class="btn btn-primary btn-lg" onclick="openModal('signup')">Start Free Trial</button>
+      <button class="btn btn-outline btn-lg" onclick="document.getElementById('scanner').scrollIntoView({behavior:'smooth'})">View Live Scanner</button>
+    </div>
+    <div class="hero-metrics">
+      <div><div class="metric-val">200+</div><div class="metric-lbl">Crypto Pairs Scanned</div></div>
+      <div><div class="metric-val">10s</div><div class="metric-lbl">Refresh Interval</div></div>
+      <div><div class="metric-val">5 Min</div><div class="metric-lbl">Rolling Window</div></div>
+      <div><div class="metric-val">99.8%</div><div class="metric-lbl">Uptime</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- SCANNER -->
+<section id="scanner" style="padding:60px 28px 88px;background:var(--bg2)">
+  <div class="section-max">
+    <div class="section-header">
+      <div class="eyebrow">Live Scanner</div>
+      <h2>Crypto Futures Momentum Scanner</h2>
+      <p>Rolling 5-minute window. Score = Price Δ × 0.6 + Volume Δ × 0.4. Binance USDT-M perpetuals only. Stocks excluded.</p>
+    </div>
+    <div class="scanner-wrap">
+      <div class="scanner-topbar">
+        <div class="scanner-title-group">
+          <div class="live-indicator"><span class="live-dot"></span>Live</div>
+          <span style="font-size:.82rem;font-weight:700;color:var(--text)">Top 5 Momentum — USDT Perpetuals</span>
+          <span class="scanner-meta">Binance Futures · Crypto Only · Stocks Excluded</span>
+        </div>
+        <div class="countdown-pill">Refreshes in <span class="cd-num" id="cd">10</span>s</div>
+      </div>
+      <div class="stats-row">
+        <div class="stat-cell"><div class="sv" id="s-total">—</div><div class="sl">Pairs Scanned</div></div>
+        <div class="stat-cell"><div class="sv">Binance Futures</div><div class="sl">Exchange</div></div>
+        <div class="stat-cell"><div class="sv">5 Min Rolling</div><div class="sl">Window</div></div>
+        <div class="stat-cell"><div class="sv">PC × 0.6 + VC × 0.4</div><div class="sl">Scoring Formula</div></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:44px">#</th>
+              <th>Symbol</th>
+              <th>Price (USDT)</th>
+              <th>Price Δ 5m</th>
+              <th>Vol Δ 5m</th>
+              <th>Score</th>
+              <th>Quote Volume</th>
+            </tr>
+          </thead>
+          <tbody id="scanner-body">
+            <tr><td colspan="7"><div class="loading-state"><div class="spin">⏳</div><div>Connecting to scanner...</div><div class="warming-note">⚠ Scores appear after ~10 seconds</div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="scanner-footer">
+        <span id="last-ts">Awaiting first fetch...</span>
+        <span class="scanner-note">⚠ Data is for informational purposes only. Not financial advice.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="section-max">
+    <div class="section-header">
+      <div class="eyebrow">Platform</div>
+      <h2>Built for quantitative traders</h2>
+      <p>Every tool is designed around data integrity and speed — no noise, no speculation.</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat-card"><div class="feat-icon">⚡</div><h3>Momentum Scanner</h3><p>Detect abnormal price acceleration across crypto perpetuals. Rolling 5-minute windows updated every 10 seconds via Binance Futures API.</p></div>
+      <div class="feat-card"><div class="feat-icon">📊</div><h3>Volume Spike Detection</h3><p>Identify unusual volume changes relative to the rolling window baseline. Filter by multiplier to surface institutional activity patterns.</p></div>
+      <div class="feat-card"><div class="feat-icon">🎯</div><h3>Probability Scoring</h3><p>Each pair receives a composite score based on price and volume momentum. Formula: Score = PriceΔ × 0.6 + VolumeΔ × 0.4.</p></div>
+      <div class="feat-card"><div class="feat-icon">🔒</div><h3>Crypto-Only Filter</h3><p>Strict whitelist using Binance underlyingType = COIN. Equity derivatives like NVDA, META, GOOGL are automatically excluded.</p></div>
+      <div class="feat-card"><div class="feat-icon">🛡</div><h3>Data Integrity First</h3><p>No simulated or interpolated data. Every number on the platform comes directly from exchange APIs with full timestamp transparency.</p></div>
+      <div class="feat-card"><div class="feat-icon">📈</div><h3>More Scanners Coming</h3><p>NSE/BSE equity scanners, options flow, and cross-exchange arbitrage monitors are in active development. Join the waitlist.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing" style="background:var(--bg2)">
+  <div class="section-max">
+    <div class="section-header">
+      <div class="eyebrow">Pricing</div>
+      <h2>Transparent, no-lock-in pricing</h2>
+      <p>Start with a 2-day free trial. No credit card required.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="plan-label">Free Trial</div>
+        <div class="plan-amount">₹<span>0</span></div>
+        <div class="plan-cycle">2 days · No card required</div>
+        <div class="plan-tagline">Full scanner access for 48 hours</div>
+        <ul class="plan-features">
+          <li><span class="ck">✓</span>Crypto momentum scanner</li>
+          <li><span class="ck">✓</span>Top 5 results</li>
+          <li><span class="ck">✓</span>10s refresh interval</li>
+          <li class="off"><span class="xx">✗</span>Extended results (Top 20)</li>
+          <li class="off"><span class="xx">✗</span>Alerts &amp; notifications</li>
+          <li class="off"><span class="xx">✗</span>CSV export</li>
+        </ul>
+        <button class="plan-btn plan-btn-outline" onclick="openModal('signup')">Start Free Trial</button>
+      </div>
+      <div class="price-card featured">
+        <div class="featured-tag">Most Popular</div>
+        <div class="plan-label">Pro</div>
+        <div class="plan-amount"><sup>₹</sup>1,499</div>
+        <div class="plan-cycle">/month · Cancel anytime</div>
+        <div class="plan-tagline">Full access, all markets</div>
+        <ul class="plan-features">
+          <li><span class="ck">✓</span>Everything in Free Trial</li>
+          <li><span class="ck">✓</span>Top 20 momentum results</li>
+          <li><span class="ck">✓</span>Crypto scanner (200+ pairs)</li>
+          <li><span class="ck">✓</span>Custom score thresholds</li>
+          <li><span class="ck">✓</span>CSV export</li>
+          <li><span class="ck">✓</span>Priority support</li>
+        </ul>
+        <button class="plan-btn plan-btn-primary" onclick="openModal('signup')">Get Pro Access</button>
+      </div>
+      <div class="price-card">
+        <div class="plan-label">Elite + Mentorship</div>
+        <div class="plan-amount"><sup>₹</sup>4,999</div>
+        <div class="plan-cycle">/month · Cohort-based</div>
+        <div class="plan-tagline">Pro tools + structured training</div>
+        <ul class="plan-features">
+          <li><span class="ck">✓</span>Everything in Pro</li>
+          <li><span class="ck">✓</span>2 live sessions/month</li>
+          <li><span class="ck">✓</span>Algo strategy reviews</li>
+          <li><span class="ck">✓</span>Private community access</li>
+          <li><span class="ck">✓</span>Python scanner workshop</li>
+          <li><span class="ck">✓</span>API access</li>
+        </ul>
+        <button class="plan-btn plan-btn-outline" onclick="openModal('signup')">Apply for Elite</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MENTORSHIP -->
+<section id="mentorship">
+  <div class="section-max">
+    <div class="mentor-layout">
+      <div class="mentor-left">
+        <div class="eyebrow" style="display:inline-block;margin-bottom:14px">Mentorship</div>
+        <h2>Build your own<br/>algorithmic edge</h2>
+        <p>From strategy design to live deployment — a structured program that teaches you to think, build, and operate like a quantitative trader. No theory-only content.</p>
+        <div class="cohort-box">
+          <strong>Next Cohort:</strong> April 2026 &nbsp;·&nbsp; Limited to 15 seats &nbsp;·&nbsp; Applications open
+        </div>
+        <div class="mentor-cta">
+          <button class="btn btn-primary btn-lg" onclick="openModal('signup')">Apply Now</button>
+          <button class="btn btn-ghost btn-lg">View Curriculum</button>
+        </div>
+      </div>
+      <div class="module-list">
+        <div class="module"><div class="mod-num">01</div><div><h4>Market Microstructure &amp; Data</h4><p>Order types, exchange APIs, data feeds, and how price formation actually works in electronic markets.</p></div></div>
+        <div class="module"><div class="mod-num">02</div><div><h4>Strategy Design &amp; Backtesting</h4><p>Build and test momentum, mean-reversion, and breakout strategies with proper walk-forward validation.</p></div></div>
+        <div class="module"><div class="mod-num">03</div><div><h4>Python for Quant Trading</h4><p>Automate scanners, connect broker APIs, and build rule-based execution systems from scratch.</p></div></div>
+        <div class="module"><div class="mod-num">04</div><div><h4>Live Session Reviews</h4><p>Bi-weekly sessions with screen-share walkthroughs, code reviews, and Q&amp;A on real market scenarios.</p></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section style="background:var(--bg2)">
+  <div class="section-max">
+    <div class="section-header">
+      <div class="eyebrow">Testimonials</div>
+      <h2>Used by independent traders &amp; researchers</h2>
+    </div>
+    <div class="test-grid">
+      <div class="test-card">
+        <div class="stars">★★★★★</div>
+        <p>"The momentum scanner is the cleanest signal filter I've used at this price point. Surfaces setups I'd spend 30 minutes finding manually."</p>
+        <div class="tester"><div class="avatar" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">RK</div><div><strong>Rahul K.</strong><span>Algo Trader, Pune</span></div></div>
+      </div>
+      <div class="test-card">
+        <div class="stars">★★★★★</div>
+        <p>"The mentorship program took me from zero coding to deploying a Python-based scanner in six weeks. Practical, no-fluff instruction."</p>
+        <div class="tester"><div class="avatar" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4)">PS</div><div><strong>Priya S.</strong><span>Equity Researcher, Mumbai</span></div></div>
+      </div>
+      <div class="test-card">
+        <div class="stars">★★★★☆</div>
+        <p>"The score formula is transparent and the data is real. I use it every morning pre-market for my crypto watchlist. No black-box nonsense."</p>
+        <div class="tester"><div class="avatar" style="background:linear-gradient(135deg,#10b981,#059669)">AM</div><div><strong>Arjun M.</strong><span>Derivatives Trader, Delhi</span></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section style="padding:80px 28px">
+  <div class="section-max">
+    <div class="cta-band">
+      <h2>Start your 2-day free trial</h2>
+      <p>No credit card required. Full scanner access for 48 hours.</p>
+      <div class="cta-actions">
+        <button class="btn btn-primary btn-lg" onclick="openModal('signup')">Create Free Account</button>
+        <a href="mailto:hello@quantsigma.in"><button class="btn btn-outline btn-lg">Contact Us</button></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-max">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <div class="logo" style="margin-bottom:12px">
+          <div class="logo-mark">QΣ</div>
+          <span class="logo-name">Quant<span style="color:var(--accent)">Sigma</span></span>
+        </div>
+        <p>Data analytics and decision-support tools for independent traders. We provide scanners, not advice.</p>
+        <div class="footer-domain">quantsigma.in</div>
+        <div class="disclaimer-box"><strong>⚠ Disclaimer:</strong> QuantSigma is a data analytics platform. Nothing here constitutes investment, trading, or financial advice. Scanner output is for informational purposes only. Not SEBI registered. Consult a registered advisor before making investment decisions.</div>
+      </div>
+      <div class="footer-col"><h5>Product</h5><a href="#">Crypto Scanner</a><a href="#">Pricing</a><a href="#">API Access</a><a href="#">Changelog</a></div>
+      <div class="footer-col"><h5>Mentorship</h5><a href="#">Program Overview</a><a href="#">Curriculum</a><a href="#">Apply Now</a><a href="#">Live Sessions</a></div>
+      <div class="footer-col"><h5>Company</h5><a href="#">About</a><a href="#">Privacy Policy</a><a href="#">Terms of Service</a><a href="mailto:hello@quantsigma.in">Contact</a></div>
+    </div>
+    <div class="footer-bottom">
+      <p>© 2026 QuantSigma · quantsigma.in · All rights reserved</p>
+      <p>Not SEBI registered · Not investment advice</p>
+    </div>
+  </div>
+</footer>
+
+<!-- AUTH MODAL -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <button class="modal-x" onclick="closeModal()">×</button>
+    <div class="modal-tabs">
+      <button class="mtab" id="tab-su" onclick="switchTab('signup')">Sign Up</button>
+      <button class="mtab" id="tab-li" onclick="switchTab('login')">Log In</button>
+    </div>
+    <div id="form-signup">
+      <h2>Create account</h2>
+      <p class="modal-sub">2-day free trial · No credit card required</p>
+      <div class="form-err" id="su-err"></div>
+      <div class="form-ok"  id="su-ok"></div>
+      <div class="fgrp"><label>Full Name</label><input type="text"     id="su-name"  placeholder="Rahul Kumar"/></div>
+      <div class="fgrp"><label>Email</label>    <input type="email"    id="su-email" placeholder="you@example.com"/></div>
+      <div class="fgrp"><label>Password</label> <input type="password" id="su-pass"  placeholder="Min. 8 characters"/></div>
+      <button class="modal-submit" id="su-btn" onclick="doSignup()">Create Account</button>
+      <p class="form-note">By signing up you agree to our Terms &amp; Privacy Policy</p>
+    </div>
+    <div id="form-login" style="display:none">
+      <h2>Welcome back</h2>
+      <p class="modal-sub">Log in to your QuantSigma dashboard</p>
+      <div class="form-err" id="li-err"></div>
+      <div class="form-ok"  id="li-ok"></div>
+      <div class="fgrp"><label>Email</label>    <input type="email"    id="li-email" placeholder="you@example.com"/></div>
+      <div class="fgrp"><label>Password</label> <input type="password" id="li-pass"  placeholder="Your password"/></div>
+      <button class="modal-submit" id="li-btn" onclick="doLogin()">Log In</button>
+      <p class="form-note"><a href="#" style="color:var(--accent)">Forgot password?</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  USER DATABASE — IndexedDB (browser-side persistent)
+//  Stores: name, email, hashed password, trialEnd
+//  Persists across page refreshes and browser sessions
+// ══════════════════════════════════════════════════════
+let db;
+const DB_NAME = 'quantsigma_db';
+const STORE   = 'users';
+
+function initDB() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains(STORE)) {
+        d.createObjectStore(STORE, { keyPath: 'email' });
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; res(db); };
+    req.onerror   = e => rej(e.target.error);
+  });
+}
+
+async function hashPass(pass) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pass));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+function dbPut(user) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(user).onsuccess = () => res();
+    tx.onerror = e => rej(e.target.error);
+  });
+}
+
+function dbGet(email) {
+  return new Promise((res, rej) => {
+    const tx  = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(email);
+    req.onsuccess = e => res(e.target.result || null);
+    req.onerror   = e => rej(e.target.error);
+  });
+}
+
+// ── AUTH ──────────────────────────────────────────────
+async function doSignup() {
+  const name  = document.getElementById('su-name').value.trim();
+  const email = document.getElementById('su-email').value.trim().toLowerCase();
+  const pass  = document.getElementById('su-pass').value;
+  const err   = document.getElementById('su-err');
+  const ok    = document.getElementById('su-ok');
+  const btn   = document.getElementById('su-btn');
+  err.style.display = 'none'; ok.style.display = 'none';
+
+  if (!name)               return showMsg(err, 'Please enter your full name.');
+  if (!email.includes('@')) return showMsg(err, 'Please enter a valid email address.');
+  if (pass.length < 8)    return showMsg(err, 'Password must be at least 8 characters.');
+
+  btn.disabled = true; btn.textContent = 'Creating account...';
+  try {
+    const existing = await dbGet(email);
+    if (existing) { showMsg(err, 'An account with this email already exists.'); return; }
+    const hash     = await hashPass(pass);
+    const now      = new Date();
+    const trialEnd = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+    await dbPut({ name, email, hash, createdAt: now.toISOString(), trialEnd: trialEnd.toISOString() });
+    showMsg(ok, `Welcome, ${name}! Your 2-day trial is active.`);
+    setTimeout(() => { closeModal(); showToast(`✓ Logged in as ${name}`); }, 1200);
+  } catch(e) {
+    showMsg(err, 'Something went wrong. Please try again.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Create Account';
+  }
+}
+
+async function doLogin() {
+  const email = document.getElementById('li-email').value.trim().toLowerCase();
+  const pass  = document.getElementById('li-pass').value;
+  const err   = document.getElementById('li-err');
+  const ok    = document.getElementById('li-ok');
+  const btn   = document.getElementById('li-btn');
+  err.style.display = 'none'; ok.style.display = 'none';
+
+  if (!email || !pass) return showMsg(err, 'Please fill in all fields.');
+
+  btn.disabled = true; btn.textContent = 'Logging in...';
+  try {
+    const user = await dbGet(email);
+    if (!user) { showMsg(err, 'No account found with this email.'); return; }
+    const hash = await hashPass(pass);
+    if (hash !== user.hash) { showMsg(err, 'Incorrect password. Please try again.'); return; }
+    showMsg(ok, `Welcome back, ${user.name}!`);
+    setTimeout(() => { closeModal(); showToast(`✓ Logged in as ${user.name}`); }, 1000);
+  } catch(e) {
+    showMsg(err, 'Something went wrong. Please try again.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Log In';
+  }
+}
+
+function showMsg(el, msg) { el.textContent = msg; el.style.display = 'block'; }
+
+// ── MODAL ─────────────────────────────────────────────
+function openModal(t) {
+  document.getElementById('overlay').classList.add('open');
+  switchTab(t);
+  document.body.style.overflow = 'hidden';
+}
+function closeModal() {
+  document.getElementById('overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+function switchTab(t) {
+  document.getElementById('form-signup').style.display = t === 'signup' ? 'block' : 'none';
+  document.getElementById('form-login').style.display  = t === 'login'  ? 'block' : 'none';
+  document.getElementById('tab-su').className = 'mtab' + (t === 'signup' ? ' on' : '');
+  document.getElementById('tab-li').className = 'mtab' + (t === 'login'  ? ' on' : '');
+}
+document.getElementById('overlay').addEventListener('click', e => {
+  if (e.target.id === 'overlay') closeModal();
+});
+
+// ── TOAST ─────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ══════════════════════════════════════════════════════
+//  SCANNER — calls YOUR Railway backend
+//  Replace RAILWAY_URL below with your actual Railway URL
+//  after you deploy the backend
+// ══════════════════════════════════════════════════════
+const RAILWAY_URL = 'https://YOUR-RAILWAY-URL.railway.app'; // ← update this after Railway deploy
+
+async function fetchMomentum() {
+  try {
+    const r = await fetch(`${RAILWAY_URL}/api/momentum`, { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error('Server error ' + r.status);
+    const d = await r.json();
+    if (!d.ok) throw new Error('Bad response from server');
+    document.getElementById('s-total').textContent = d.total || '—';
+    document.getElementById('last-ts').textContent  = 'Last updated: ' + new Date(d.ts).toLocaleTimeString();
+    if (!d.top5 || d.top5.length === 0) {
+      showLoading('Building rolling history... scores appear in ~10 seconds');
+    } else {
+      renderTable(d.top5);
+    }
+  } catch(e) {
+    showError(e.message);
+  }
+}
+
+// ── Table render ──────────────────────────────────────
+const RANK_STYLE = [
+  { bg:'#f59e0b1a', border:'#f59e0b', color:'#f59e0b' },
+  { bg:'#94a3b81a', border:'#94a3b8', color:'#94a3b8' },
+  { bg:'#cd7f321a', border:'#cd7f32', color:'#cd7f32' },
+  { bg:'#1a22351a', border:'#2a3060', color:'#4a5a80' },
+  { bg:'#1a22351a', border:'#2a3060', color:'#4a5a80' },
+];
+
+function fmtPrice(p) {
+  if (p >= 1000) return p.toFixed(2);
+  if (p >= 1)    return p.toFixed(3);
+  if (p >= 0.01) return p.toFixed(4);
+  return p.toFixed(6);
+}
+function fmtVol(n) {
+  if (n >= 1e9) return (n/1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return (n/1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(2) + 'K';
+  return n.toFixed(2);
+}
+function scoreColor(s) {
+  return s > 10 ? '#00e676' : s > 0 ? '#69f0ae' : s > -10 ? '#ff5252' : '#d50000';
+}
+function hue(sym) { return (sym.charCodeAt(0) * 37 + sym.charCodeAt(1) * 17) % 360; }
+
+function renderTable(rows) {
+  const html = rows.map((r, i) => {
+    const rs  = RANK_STYLE[i];
+    const sym = r.symbol.replace('USDT', '');
+    const h   = hue(r.symbol);
+    const sc  = scoreColor(r.score);
+    return `<tr>
+      <td><div class="rank-badge" style="background:${rs.bg};border:1.5px solid ${rs.border};color:${rs.color}">${i+1}</div></td>
+      <td><div class="coin-cell">
+        <div class="coin-avatar" style="background:hsl(${h},55%,15%);border:1.5px solid hsl(${h},55%,35%);color:hsl(${h},75%,65%)">${sym.slice(0,2)}</div>
+        <div><div class="coin-sym">${sym}</div><div class="coin-type">USDT Perpetual</div></div>
+      </div></td>
+      <td><span class="price-cell">$${fmtPrice(r.price)}</span></td>
+      <td><span class="chg-badge ${r.priceChange >= 0 ? 'up' : 'dn'}">${r.priceChange >= 0 ? '▲' : '▼'} ${Math.abs(r.priceChange).toFixed(2)}%</span></td>
+      <td><span class="vol-chg" style="color:${r.volChange >= 0 ? 'var(--green)' : 'var(--red)'}">${r.volChange >= 0 ? '+' : ''}${r.volChange.toFixed(2)}%</span></td>
+      <td><span class="score-cell" style="color:${sc};border-color:${sc}44;box-shadow:0 0 6px ${sc}18">${r.score >= 0 ? '+' : ''}${r.score.toFixed(2)}</span></td>
+      <td><span class="qvol">$${fmtVol(r.qVol)}</span></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('scanner-body').innerHTML = html;
+}
+
+function showLoading(msg) {
+  document.getElementById('scanner-body').innerHTML =
+    `<tr><td colspan="7"><div class="loading-state"><div class="spin">⏳</div><div>${msg}</div></div></td></tr>`;
+}
+function showError(msg) {
+  document.getElementById('scanner-body').innerHTML =
+    `<tr><td colspan="7"><div class="error-state">⚠ ${msg}<br><small style="color:var(--text3);margin-top:6px;display:block">Make sure the backend server is running on Railway</small></div></td></tr>`;
+}
+
+// ── Countdown + auto refresh ──────────────────────────
+let cd = 10;
+function tickCountdown() {
+  cd--;
+  const el = document.getElementById('cd');
+  el.textContent = cd;
+  el.className   = 'cd-num' + (cd <= 3 ? ' cd-warn' : '');
+  if (cd <= 0) { cd = 10; fetchMomentum(); }
+}
+
+// ── Boot ──────────────────────────────────────────────
+initDB().catch(console.error);
+fetchMomentum();
+setInterval(fetchMomentum,   10000);
+setInterval(tickCountdown,   1000);
+switchTab('signup');
+</script>
+</body>
+</html>
