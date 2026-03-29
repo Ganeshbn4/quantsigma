@@ -712,7 +712,7 @@ function renderTable(rows) {
       </div></td>
       <td><span class="price-cell">$${fmtPrice(r.price)}</span></td>
       <td><span class="chg-badge ${r.priceChange >= 0 ? 'up' : 'dn'}">${r.priceChange >= 0 ? '▲' : '▼'} ${Math.abs(r.priceChange).toFixed(2)}%</span></td>
-      <td><span class="vol-chg" style="color:${r.volChange >= 0 ? 'var(--green)' : 'var(--red)'}">${r.volChange >= 0 ? '+' : ''}${r.volChange.toFixed(2)}%</span></td>
+      <td><span class="vol-chg" style="color:${r.volumeChange >= 0 ? 'var(--green)' : 'var(--red)'}">${r.volumeChange >= 0 ? '+' : ''}${r.volumeChange.toFixed(2)}%</span></td>
       <td><span class="score-cell" style="color:${sc};border-color:${sc}44;box-shadow:0 0 6px ${sc}18">${r.score >= 0 ? '+' : ''}${r.score.toFixed(2)}</span></td>
       <td><span class="qvol">$${fmtVol(r.qVol)}</span></td>
     </tr>`;
