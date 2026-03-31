@@ -7,7 +7,6 @@
 
 <!-- Razorpay SDK -->
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-
 <!-- EmailJS SDK -->
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 
@@ -15,13 +14,12 @@
   import { initializeApp }                           from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword,
            signInWithEmailAndPassword, onAuthStateChanged,
-           signOut }                                 from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+           signOut, sendEmailVerification,
+           sendPasswordResetEmail }                  from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
   import { getFirestore, collection, addDoc, getDocs,
-           getDoc, doc, updateDoc,
-           query, where, orderBy,
+           doc, updateDoc, query, where,
            serverTimestamp }                         from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
 
-  // ── Firebase config ───────────────────────────────
   const firebaseConfig = {
     apiKey:            "AIzaSyDmTvYPDUslY7d-8Bz-9uSNi5Kf_Gi9sNc",
     authDomain:        "quantsigma-d5145.firebaseapp.com",
@@ -35,25 +33,19 @@
   const auth = getAuth(app);
   const db   = getFirestore(app);
 
-  // ── EmailJS init ──────────────────────────────────
   emailjs.init('LZ4T7bnlH_5CpAwhm');
 
-  // ── Admin email ───────────────────────────────────
   const ADMIN_EMAIL = 'ganeshbn1998@gmail.com';
-
-  // ── Razorpay Key ID (safe to expose in frontend) ──
   const RZP_KEY_ID  = 'rzp_live_SXll5jt40HY9nM';
 
-  // ── Plans config ──────────────────────────────────
   const PLANS = {
     pro:   { name: 'Pro',            amount: 149900, desc: 'Full scanner access · 200+ pairs · 10s refresh' },
     elite: { name: 'Elite + Mentor', amount: 499900, desc: 'Pro + 2 live sessions + strategy reviews' }
   };
 
-  // ── Current user state ────────────────────────────
-  let currentUser     = null;
-  let currentUserDoc  = null;
-  let currentUserRef  = null;
+  let currentUser    = null;
+  let currentUserDoc = null;
+  let currentUserRef = null;
 
   // ══════════════════════════════════════════════════
   //  AUTH STATE
@@ -67,30 +59,40 @@
 
     if (user) {
       currentUser = user;
-      if (loginBtn)  loginBtn.style.display  = 'none';
-      if (signupBtn) signupBtn.style.display = 'none';
-      if (logoutBtn) logoutBtn.style.display = 'inline-flex';
-      if (userLabel) {
-        userLabel.style.display = 'inline-flex';
-        userLabel.textContent   = user.email.split('@')[0];
-      }
-      // Show admin link if admin
-      if (adminLink && user.email === ADMIN_EMAIL) {
-        adminLink.style.display = 'inline-flex';
-      }
 
-      // Check access
+      // ── Session restriction: store session token ──
+      const sessionToken = `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem('qs_session', sessionToken);
+
+      // Update Firestore with current session token
       try {
-        const snap = await getDocs(query(
-          collection(db, 'users'),
-          where('uid', '==', user.uid)
-        ));
+        const snap = await getDocs(query(collection(db,'users'), where('uid','==',user.uid)));
         if (!snap.empty) {
           currentUserDoc = snap.docs[0].data();
           currentUserRef = snap.docs[0].ref;
+
+          // Check if another session is active
+          const storedSession = currentUserDoc.sessionToken;
+          const mySession     = localStorage.getItem('qs_session');
+
+          // Write new session token to Firestore
+          await updateDoc(currentUserRef, { sessionToken });
+
+          // ── Email verification check ──────────────
+          if (!user.emailVerified) {
+            showVerificationBanner();
+            lockScanner('unverified');
+            updateNav(user, false);
+            return;
+          }
+
+          updateNav(user, user.email === ADMIN_EMAIL);
+
+          // ── Check plan / trial ────────────────────
           const trialEnd = currentUserDoc.trialEnd?.toDate?.() || new Date(currentUserDoc.trialEnd);
           const plan     = currentUserDoc.plan || 'trial';
           const now      = new Date();
+
           if (plan === 'pro' || plan === 'elite') {
             unlockScanner(null);
           } else if (trialEnd > now) {
@@ -106,17 +108,41 @@
         lockScanner('error');
       }
     } else {
-      currentUser    = null;
-      currentUserDoc = null;
-      currentUserRef = null;
+      currentUser = null; currentUserDoc = null; currentUserRef = null;
+      localStorage.removeItem('qs_session');
       if (loginBtn)  loginBtn.style.display  = 'inline-flex';
       if (signupBtn) signupBtn.style.display = 'inline-flex';
       if (logoutBtn) logoutBtn.style.display = 'none';
       if (userLabel) userLabel.style.display = 'none';
       if (adminLink) adminLink.style.display = 'none';
+      hideVerificationBanner();
       lockScanner('guest');
     }
   });
+
+  function updateNav(user, isAdmin) {
+    const loginBtn  = document.getElementById('nav-login');
+    const signupBtn = document.getElementById('nav-signup');
+    const logoutBtn = document.getElementById('nav-logout');
+    const userLabel = document.getElementById('nav-user');
+    const adminLink = document.getElementById('nav-admin');
+    const dashBtn   = document.getElementById('nav-dashboard');
+    if (loginBtn)  loginBtn.style.display  = 'none';
+    if (signupBtn) signupBtn.style.display = 'none';
+    if (logoutBtn) logoutBtn.style.display = 'inline-flex';
+    if (dashBtn)   dashBtn.style.display   = 'inline-flex';
+    if (userLabel) { userLabel.style.display='inline-flex'; userLabel.textContent=user.email.split('@')[0]; }
+    if (adminLink && isAdmin) adminLink.style.display = 'inline-flex';
+  }
+
+  function showVerificationBanner() {
+    const b = document.getElementById('verify-banner');
+    if (b) b.style.display = 'flex';
+  }
+  function hideVerificationBanner() {
+    const b = document.getElementById('verify-banner');
+    if (b) b.style.display = 'none';
+  }
 
   // ══════════════════════════════════════════════════
   //  SIGNUP
@@ -131,20 +157,40 @@
     err.style.display = 'none'; ok.style.display = 'none';
 
     if (!name)                return showMsg(err, 'Please enter your full name.');
-    if (!email.includes('@')) return showMsg(err, 'Please enter a valid email.');
+    if (!email.includes('@')) return showMsg(err, 'Please enter a valid email address.');
     if (pass.length < 8)      return showMsg(err, 'Password must be at least 8 characters.');
+
+    // Basic email format check
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) return showMsg(err, 'Please enter a valid email address.');
 
     btn.disabled = true; btn.textContent = 'Creating account...';
     try {
       const cred     = await createUserWithEmailAndPassword(auth, email, pass);
       const trialEnd = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+
+      // Send Firebase email verification
+      await sendEmailVerification(cred.user);
+
+      // Save to Firestore
       await addDoc(collection(db, 'users'), {
         uid: cred.user.uid, name, email,
         plan: 'trial', trialEnd,
+        sessionToken: '',
         createdAt: serverTimestamp()
       });
-      showMsg(ok, `Welcome, ${name}! Your 2-day trial is active.`);
-      setTimeout(() => { closeModal(); showToast(`✓ Logged in as ${name}`); }, 1200);
+
+      // Send welcome email via EmailJS
+      try {
+        await emailjs.send('service_k58nt1r', 'template_vc8iwiv', {
+          to_name:   name,
+          to_email:  email,
+          trial_end: trialEnd.toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' })
+        });
+      } catch(e) { console.warn('Welcome email failed:', e); }
+
+      showMsg(ok, `✅ Account created! We've sent a verification email to ${email}. Please verify before logging in.`);
+      setTimeout(() => closeModal(), 4000);
     } catch(e) {
       const msgs = {
         'auth/email-already-in-use': 'An account with this email already exists.',
@@ -172,14 +218,26 @@
 
     btn.disabled = true; btn.textContent = 'Logging in...';
     try {
-      await signInWithEmailAndPassword(auth, email, pass);
-      showMsg(ok, 'Welcome back!');
-      setTimeout(() => { closeModal(); showToast('✓ Logged in successfully'); }, 1000);
+      const cred = await signInWithEmailAndPassword(auth, email, pass);
+
+      // Check email verification
+      if (!cred.user.emailVerified) {
+        showMsg(err, '⚠ Please verify your email first. Check your inbox for the verification link.');
+        await signOut(auth);
+        // Offer to resend
+        document.getElementById('resend-verify').style.display = 'block';
+        window._unverifiedEmail = email;
+        return;
+      }
+
+      showMsg(ok, 'Welcome back! Redirecting to dashboard...');
+      setTimeout(() => { closeModal(); window.location.href = 'dashboard.html'; }, 1000);
     } catch(e) {
       const msgs = {
         'auth/user-not-found':     'No account found with this email.',
         'auth/wrong-password':     'Incorrect password. Please try again.',
-        'auth/invalid-credential': 'Incorrect email or password.'
+        'auth/invalid-credential': 'Incorrect email or password.',
+        'auth/too-many-requests':  'Too many attempts. Please try again later.'
       };
       showMsg(err, msgs[e.code] || e.message);
     } finally {
@@ -187,72 +245,92 @@
     }
   };
 
+  // ── Resend verification email ─────────────────────
+  window.resendVerification = async function() {
+    try {
+      if (auth.currentUser) {
+        await sendEmailVerification(auth.currentUser);
+        showToast('Verification email sent! Check your inbox.');
+      } else if (window._unverifiedEmail) {
+        showToast('Please log in again to resend verification.');
+      }
+    } catch(e) {
+      showToast('Failed to send. Try again in a few minutes.');
+    }
+  };
+
+  // ══════════════════════════════════════════════════
+  //  FORGOT PASSWORD
+  // ══════════════════════════════════════════════════
+  window.doForgotPassword = async function() {
+    const email = document.getElementById('fp-email').value.trim();
+    const err   = document.getElementById('fp-err');
+    const ok    = document.getElementById('fp-ok');
+    const btn   = document.getElementById('fp-btn');
+    err.style.display = 'none'; ok.style.display = 'none';
+
+    if (!email.includes('@')) return showMsg(err, 'Please enter a valid email address.');
+
+    btn.disabled = true; btn.textContent = 'Sending...';
+    try {
+      await sendPasswordResetEmail(auth, email);
+      showMsg(ok, `✅ Password reset link sent to ${email}. Check your inbox.`);
+    } catch(e) {
+      const msgs = {
+        'auth/user-not-found': 'No account found with this email.',
+        'auth/invalid-email':  'Please enter a valid email address.'
+      };
+      showMsg(err, msgs[e.code] || e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Send Reset Link';
+    }
+  };
+
   // ══════════════════════════════════════════════════
   //  LOGOUT
   // ══════════════════════════════════════════════════
   window.doLogout = async function() {
+    localStorage.removeItem('qs_session');
     await signOut(auth);
     showToast('Logged out successfully');
   };
 
   // ══════════════════════════════════════════════════
-  //  RAZORPAY PAYMENT
+  //  RAZORPAY
   // ══════════════════════════════════════════════════
   window.startPayment = async function(planKey) {
     if (!currentUser) { openModal('login'); return; }
-
     const plan = PLANS[planKey];
     if (!plan) return;
-
     const options = {
-      key:         RZP_KEY_ID,
-      amount:      plan.amount,       // in paise
-      currency:    'INR',
-      name:        'QuantSigma',
-      description: plan.desc,
-      image:       'https://quantsigma.in/favicon.ico',
-      prefill: {
-        name:  currentUserDoc?.name  || '',
-        email: currentUser.email     || '',
-      },
+      key: RZP_KEY_ID, amount: plan.amount, currency: 'INR',
+      name: 'QuantSigma', description: plan.desc,
+      prefill: { name: currentUserDoc?.name||'', email: currentUser.email||'' },
       theme: { color: '#00c4e8' },
-
       handler: async function(response) {
-        // Payment successful — update Firestore
         try {
           if (currentUserRef) {
-            const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            const expiresAt = new Date(Date.now() + 30*24*60*60*1000);
             await updateDoc(currentUserRef, {
-              plan:              planKey,
+              plan: planKey,
               razorpayPaymentId: response.razorpay_payment_id,
               subscriptionStart: serverTimestamp(),
               subscriptionEnd:   expiresAt
             });
             showToast(`✅ Payment successful! ${plan.name} plan activated.`);
-            // Refresh page to unlock scanner
-            setTimeout(() => location.reload(), 1500);
+            setTimeout(() => window.location.href='dashboard.html', 1500);
           }
-        } catch(e) {
-          showToast('Payment received but activation failed. Contact support.');
-        }
+        } catch(e) { showToast('Payment received but activation failed. Contact support.'); }
       },
-
-      modal: {
-        ondismiss: function() {
-          showToast('Payment cancelled.');
-        }
-      }
+      modal: { ondismiss: () => showToast('Payment cancelled.') }
     };
-
     const rzp = new Razorpay(options);
-    rzp.on('payment.failed', function(resp) {
-      showToast('❌ Payment failed: ' + resp.error.description);
-    });
+    rzp.on('payment.failed', r => showToast('❌ Payment failed: '+r.error.description));
     rzp.open();
   };
 
   // ══════════════════════════════════════════════════
-  //  MENTORSHIP APPLICATION + EMAILJS
+  //  MENTORSHIP
   // ══════════════════════════════════════════════════
   window.submitMentorship = async function() {
     const name    = document.getElementById('m-name').value.trim();
@@ -263,133 +341,87 @@
     const err     = document.getElementById('m-err');
     const ok      = document.getElementById('m-ok');
     const btn     = document.getElementById('m-btn');
-    err.style.display = 'none'; ok.style.display = 'none';
-
-    if (!name)                return showMsg(err, 'Please enter your name.');
-    if (!email.includes('@')) return showMsg(err, 'Please enter a valid email.');
-    if (!phone)               return showMsg(err, 'Please enter your phone number.');
-
-    btn.disabled = true; btn.textContent = 'Submitting...';
+    err.style.display='none'; ok.style.display='none';
+    if (!name)                return showMsg(err,'Please enter your name.');
+    if (!email.includes('@')) return showMsg(err,'Please enter a valid email.');
+    if (!phone)               return showMsg(err,'Please enter your phone number.');
+    btn.disabled=true; btn.textContent='Submitting...';
     try {
-      // Save to Firestore
-      await addDoc(collection(db, 'mentorship_applications'), {
-        name, email, phone, plan, message,
-        status: 'pending', createdAt: serverTimestamp()
+      await addDoc(collection(db,'mentorship_applications'),{
+        name,email,phone,plan,message,status:'pending',createdAt:serverTimestamp()
       });
-
-      // Send email via EmailJS
-      await emailjs.send('service_k58nt1r', 'template_2625798', {
-        from_name:  name,
-        from_email: email,
-        phone:      phone,
-        plan:       plan,
-        message:    message || 'No message provided',
-        time:       new Date().toLocaleString()
+      await emailjs.send('service_k58nt1r','template_2625798',{
+        from_name:name,from_email:email,phone,plan,
+        message:message||'No message provided',
+        time:new Date().toLocaleString()
       });
-
-      showMsg(ok, '✅ Application submitted! We will contact you within 24 hours.');
-      ['m-name','m-email','m-phone','m-message'].forEach(id => {
-        document.getElementById(id).value = '';
-      });
-    } catch(e) {
-      showMsg(err, 'Failed to submit. Please try again.');
-      console.error(e);
-    } finally {
-      btn.disabled = false; btn.textContent = 'Submit Application';
-    }
+      showMsg(ok,'✅ Application submitted! We will contact you within 24 hours.');
+      ['m-name','m-email','m-phone','m-message'].forEach(id=>{document.getElementById(id).value='';});
+    } catch(e) { showMsg(err,'Failed to submit. Please try again.'); }
+    finally { btn.disabled=false; btn.textContent='Submit Application'; }
   };
 
   // ══════════════════════════════════════════════════
-  //  ADMIN PANEL
+  //  ADMIN
   // ══════════════════════════════════════════════════
   window.openAdmin = async function() {
-    if (!currentUser || currentUser.email !== ADMIN_EMAIL) {
-      showToast('Access denied.');
-      return;
-    }
+    if (!currentUser||currentUser.email!==ADMIN_EMAIL){showToast('Access denied.');return;}
     document.getElementById('admin-overlay').classList.add('open');
-    document.body.style.overflow = 'hidden';
+    document.body.style.overflow='hidden';
     await loadAdminData();
   };
-
-  window.closeAdmin = function() {
+  window.closeAdmin = function(){
     document.getElementById('admin-overlay').classList.remove('open');
-    document.body.style.overflow = '';
+    document.body.style.overflow='';
   };
-
-  async function loadAdminData() {
-    // Load users
-    try {
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const users     = usersSnap.docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() }));
-      renderAdminUsers(users);
-    } catch(e) { console.error('Users load error:', e); }
-
-    // Load mentorship applications
-    try {
-      const appSnap = await getDocs(collection(db, 'mentorship_applications'));
-      const apps    = appSnap.docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() }));
-      renderAdminApps(apps);
-    } catch(e) { console.error('Apps load error:', e); }
+  async function loadAdminData(){
+    try{
+      const usersSnap=await getDocs(collection(db,'users'));
+      renderAdminUsers(usersSnap.docs.map(d=>({id:d.id,ref:d.ref,...d.data()})));
+    }catch(e){console.error(e);}
+    try{
+      const appSnap=await getDocs(collection(db,'mentorship_applications'));
+      renderAdminApps(appSnap.docs.map(d=>({id:d.id,...d.data()})));
+    }catch(e){console.error(e);}
   }
-
-  function renderAdminUsers(users) {
-    const tbody = document.getElementById('admin-users-body');
-    if (!users.length) { tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text3)">No users yet</td></tr>'; return; }
-    tbody.innerHTML = users.map(u => {
-      const trialEnd  = u.trialEnd?.toDate?.() || new Date(u.trialEnd);
-      const trialStr  = trialEnd ? trialEnd.toLocaleDateString() : '—';
-      const planBadge = u.plan === 'pro' ? 'badge-pro' : u.plan === 'elite' ? 'badge-elite' : 'badge-trial';
-      return `<tr>
-        <td>${u.name || '—'}</td>
-        <td>${u.email}</td>
-        <td><span class="admin-badge ${planBadge}">${u.plan || 'trial'}</span></td>
-        <td>${trialStr}</td>
-        <td>${u.createdAt?.toDate?.()?.toLocaleDateString() || '—'}</td>
-        <td>
-          <select class="admin-plan-select" onchange="upgradePlan('${u.id}', this.value)">
-            <option value="">Change plan</option>
-            <option value="trial">Trial</option>
-            <option value="pro">Pro</option>
-            <option value="elite">Elite</option>
-          </select>
-        </td>
-      </tr>`;
+  function renderAdminUsers(users){
+    const tbody=document.getElementById('admin-users-body');
+    if(!users.length){tbody.innerHTML='<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text3)">No users yet</td></tr>';return;}
+    tbody.innerHTML=users.map(u=>{
+      const trialEnd=u.trialEnd?.toDate?.()||new Date(u.trialEnd);
+      const planBadge=u.plan==='pro'?'badge-pro':u.plan==='elite'?'badge-elite':'badge-trial';
+      return`<tr>
+        <td>${u.name||'—'}</td><td>${u.email}</td>
+        <td><span class="admin-badge ${planBadge}">${u.plan||'trial'}</span></td>
+        <td>${trialEnd?trialEnd.toLocaleDateString():'—'}</td>
+        <td>${u.createdAt?.toDate?.()?.toLocaleDateString()||'—'}</td>
+        <td><select class="admin-plan-select" onchange="upgradePlan('${u.id}',this.value)">
+          <option value="">Change</option>
+          <option value="trial">Trial</option>
+          <option value="pro">Pro</option>
+          <option value="elite">Elite</option>
+        </select></td></tr>`;
     }).join('');
   }
-
-  function renderAdminApps(apps) {
-    const tbody = document.getElementById('admin-apps-body');
-    if (!apps.length) { tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3)">No applications yet</td></tr>'; return; }
-    tbody.innerHTML = apps.map(a => `<tr>
-      <td>${a.name}</td>
-      <td>${a.email}</td>
-      <td>${a.phone || '—'}</td>
+  function renderAdminApps(apps){
+    const tbody=document.getElementById('admin-apps-body');
+    if(!apps.length){tbody.innerHTML='<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3)">No applications yet</td></tr>';return;}
+    tbody.innerHTML=apps.map(a=>`<tr>
+      <td>${a.name}</td><td>${a.email}</td><td>${a.phone||'—'}</td>
       <td><span class="admin-badge badge-pro">${a.plan}</span></td>
-      <td>${a.createdAt?.toDate?.()?.toLocaleDateString() || '—'}</td>
-    </tr>`).join('');
+      <td>${a.createdAt?.toDate?.()?.toLocaleDateString()||'—'}</td></tr>`).join('');
   }
-
-  window.upgradePlan = async function(docId, newPlan) {
-    if (!newPlan) return;
-    try {
-      const ref = doc(db, 'users', docId);
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-      await updateDoc(ref, {
-        plan:            newPlan,
-        subscriptionEnd: newPlan === 'trial' ? null : expiresAt
-      });
+  window.upgradePlan=async function(docId,newPlan){
+    if(!newPlan)return;
+    try{
+      const ref=doc(db,'users',docId);
+      const expiresAt=new Date(Date.now()+30*24*60*60*1000);
+      await updateDoc(ref,{plan:newPlan,subscriptionEnd:newPlan==='trial'?null:expiresAt});
       showToast(`✅ Plan updated to ${newPlan}`);
       await loadAdminData();
-    } catch(e) {
-      showToast('Failed to update plan.');
-    }
+    }catch(e){showToast('Failed to update plan.');}
   };
-
-  window.refreshAdmin = async function() {
-    showToast('Refreshing...');
-    await loadAdminData();
-  };
+  window.refreshAdmin=async function(){showToast('Refreshing...');await loadAdminData();};
 </script>
 
 <style>
@@ -407,12 +439,18 @@ a{text-decoration:none;color:inherit}
 ::-webkit-scrollbar-track{background:var(--bg2)}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
 
+/* VERIFY BANNER */
+.verify-banner{display:none;align-items:center;justify-content:space-between;padding:10px 28px;background:rgba(245,158,11,.08);border-bottom:1px solid rgba(245,158,11,.2);flex-wrap:wrap;gap:8px;position:fixed;top:60px;left:0;right:0;z-index:90}
+.verify-banner span{font-size:.78rem;color:var(--yellow)}
+.verify-banner button{font-size:.75rem;padding:4px 12px;border-radius:5px;border:1px solid var(--yellow);background:transparent;color:var(--yellow);cursor:pointer}
+.verify-banner button:hover{background:rgba(245,158,11,.1)}
+
 /* NAV */
 nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(7,9,15,0.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);height:60px}
 .nav-inner{max-width:1280px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:100%;padding:0 28px}
 .logo{display:flex;align-items:center;gap:10px}
 .logo-mark{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;color:#fff;letter-spacing:-1px}
-.logo-name{font-size:1.05rem;font-weight:800;color:#fff;letter-spacing:.3px}
+.logo-name{font-size:1.05rem;font-weight:800;color:#fff}
 .logo-name span{color:var(--accent)}
 .nav-links{display:flex;align-items:center;gap:26px}
 .nav-links a{color:var(--text2);font-size:.82rem;font-weight:500;transition:.15s}
@@ -430,7 +468,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(7,9,15,0.95)
 .btn-logout{background:transparent;border:1px solid var(--border2);color:var(--text3);display:none}
 .btn-logout:hover{border-color:var(--red);color:var(--red)}
 .btn-admin{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--yellow);display:none;font-size:.75rem}
-.btn-admin:hover{background:rgba(245,158,11,.2)}
+.btn-dashboard{background:rgba(0,196,232,.1);border:1px solid rgba(0,196,232,.3);color:var(--accent);display:none;font-size:.75rem}
 
 /* HERO */
 .hero{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:80px 28px 60px;position:relative;overflow:hidden}
@@ -556,7 +594,7 @@ td:first-child,td:nth-child(2){text-align:left}
 .mentor-form p{font-size:.82rem;color:var(--text2);margin-bottom:24px}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .fgrp{margin-bottom:14px}
-.fgrp label{display:block;font-size:.72rem;font-weight:600;color:var(--text2);margin-bottom:5px;letter-spacing:.3px}
+.fgrp label{display:block;font-size:.72rem;font-weight:600;color:var(--text2);margin-bottom:5px}
 .fgrp input,.fgrp select,.fgrp textarea{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:9px 12px;color:var(--text);font-size:.85rem;outline:none;transition:.15s;font-family:inherit}
 .fgrp input:focus,.fgrp select:focus,.fgrp textarea:focus{border-color:var(--accent)}
 .fgrp input::placeholder,.fgrp textarea::placeholder{color:var(--text3)}
@@ -594,10 +632,10 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
 .footer-bottom{border-top:1px solid var(--border);padding-top:20px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 .footer-bottom p{font-size:.72rem;color:var(--text3)}
 
-/* AUTH MODAL */
+/* MODAL */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:200;display:none;align-items:center;justify-content:center;padding:20px}
 .overlay.open{display:flex}
-.modal{background:var(--card);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:400px;padding:32px;position:relative}
+.modal{background:var(--card);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:420px;padding:32px;position:relative;max-height:90vh;overflow-y:auto}
 .modal-x{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--text3);font-size:1.3rem;cursor:pointer;line-height:1;padding:2px 6px}
 .modal-x:hover{color:var(--text)}
 .modal-tabs{display:flex;background:var(--bg3);border-radius:6px;padding:3px;margin-bottom:24px;border:1px solid var(--border)}
@@ -611,6 +649,10 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
 .form-note{font-size:.7rem;color:var(--text3);text-align:center;margin-top:10px}
 .form-err{font-size:.75rem;color:var(--red);margin-bottom:10px;padding:8px 10px;background:rgba(255,68,68,.07);border:1px solid rgba(255,68,68,.15);border-radius:5px;display:none}
 .form-ok{font-size:.75rem;color:var(--green);margin-bottom:10px;padding:8px 10px;background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.15);border-radius:5px;display:none}
+.forgot-link{display:block;text-align:right;font-size:.75rem;color:var(--accent);cursor:pointer;margin-top:-8px;margin-bottom:14px}
+.resend-link{display:none;font-size:.75rem;color:var(--accent);cursor:pointer;text-align:center;margin-top:8px}
+.divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--text3);font-size:.72rem}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
 
 /* ADMIN PANEL */
 .admin-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);z-index:300;display:none;flex-direction:column}
@@ -631,7 +673,6 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
 .badge-pro{background:rgba(0,196,232,.12);color:var(--accent)}
 .badge-elite{background:rgba(109,40,217,.15);color:#a78bfa}
 .admin-plan-select{background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:4px 8px;border-radius:5px;font-size:.75rem;cursor:pointer;outline:none}
-.admin-plan-select:focus{border-color:var(--accent)}
 
 /* TOAST */
 .toast{position:fixed;bottom:24px;right:24px;z-index:400;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:12px 18px;font-size:.82rem;color:var(--text);display:none;align-items:center;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
@@ -652,6 +693,12 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
 </head>
 <body>
 
+<!-- EMAIL VERIFICATION BANNER -->
+<div class="verify-banner" id="verify-banner">
+  <span>⚠ Please verify your email address to access the scanner. Check your inbox.</span>
+  <button onclick="resendVerification()">Resend Verification Email</button>
+</div>
+
 <!-- NAV -->
 <nav>
   <div class="nav-inner">
@@ -667,6 +714,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
     </div>
     <div class="nav-actions">
       <span class="nav-user" id="nav-user"></span>
+      <button class="btn btn-dashboard" id="nav-dashboard" onclick="window.location.href='dashboard.html'">📊 Dashboard</button>
       <button class="btn btn-admin" id="nav-admin" onclick="openAdmin()">⚙ Admin</button>
       <button class="btn btn-ghost" id="nav-login" onclick="openModal('login')">Log In</button>
       <button class="btn btn-primary" id="nav-signup" onclick="openModal('signup')">Start Free Trial</button>
@@ -695,7 +743,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
   </div>
 </section>
 
-<!-- SCANNER -->
+<!-- SCANNER PREVIEW (landing page — locked) -->
 <section id="scanner" style="padding:60px 28px 88px;background:var(--bg2)">
   <div class="section-max">
     <div class="section-header">
@@ -734,17 +782,16 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
           <table>
             <thead>
               <tr>
-                <th style="width:44px">#</th>
-                <th>Symbol</th>
-                <th>Price (USDT)</th>
-                <th>Price Δ 5m</th>
-                <th>Vol Δ 5m</th>
-                <th>Score</th>
-                <th>Quote Volume</th>
+                <th style="width:44px">#</th><th>Symbol</th>
+                <th>Price (USDT)</th><th>Price Δ 5m</th>
+                <th>Vol Δ 5m</th><th>Score</th><th>Quote Volume</th>
               </tr>
             </thead>
             <tbody id="scanner-body">
-              <tr><td colspan="7"><div class="loading-state"><div class="spin">⏳</div><div>Connecting to scanner...</div><div class="warming-note">⚠ Scores appear after ~10 seconds</div></div></td></tr>
+              <tr><td colspan="7"><div class="loading-state"><div class="spin">⏳</div>
+              <div>Connecting to scanner...</div>
+              <div class="warming-note">⚠ Scores appear after ~10 seconds</div>
+              </div></td></tr>
             </tbody>
           </table>
         </div>
@@ -840,9 +887,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         <div class="eyebrow" style="display:inline-block;margin-bottom:14px">Mentorship</div>
         <h2>Build your own<br/>algorithmic edge</h2>
         <p>From strategy design to live deployment — a structured program that teaches you to think, build, and operate like a quantitative trader. No theory-only content.</p>
-        <div class="cohort-box">
-          <strong>Next Cohort:</strong> April 2026 &nbsp;·&nbsp; Limited to 15 seats &nbsp;·&nbsp; Applications open
-        </div>
+        <div class="cohort-box"><strong>Next Cohort:</strong> April 2026 &nbsp;·&nbsp; Limited to 15 seats &nbsp;·&nbsp; Applications open</div>
         <div class="mentor-cta">
           <button class="btn btn-primary btn-lg" onclick="openMentorshipForm()">Apply Now</button>
           <button class="btn btn-ghost btn-lg">View Curriculum</button>
@@ -864,16 +909,14 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         <div class="fgrp"><label>Full Name</label><input type="text"  id="m-name"  placeholder="Rahul Kumar"/></div>
         <div class="fgrp"><label>Email</label><input type="email"     id="m-email" placeholder="you@example.com"/></div>
         <div class="fgrp"><label>Phone</label><input type="tel"       id="m-phone" placeholder="+91 98765 43210"/></div>
-        <div class="fgrp">
-          <label>Interested Plan</label>
+        <div class="fgrp"><label>Interested Plan</label>
           <select id="m-plan">
             <option value="elite">Elite + Mentorship — ₹4,999/mo</option>
             <option value="pro">Pro — ₹1,499/mo</option>
             <option value="custom">Custom / One-time session</option>
           </select>
         </div>
-        <div class="fgrp full">
-          <label>Tell us about yourself (optional)</label>
+        <div class="fgrp full"><label>Tell us about yourself (optional)</label>
           <textarea id="m-message" placeholder="Your trading background, goals, what you want to learn..."></textarea>
         </div>
       </div>
@@ -934,10 +977,10 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         </div>
         <p>Data analytics and decision-support tools for independent traders. We provide scanners, not advice.</p>
         <div class="footer-domain">quantsigma.in</div>
-        <div class="disclaimer-box"><strong>⚠ Disclaimer:</strong> QuantSigma is a data analytics platform. Nothing here constitutes investment, trading, or financial advice. Scanner output is for informational purposes only. Not SEBI registered. Consult a registered advisor before making investment decisions.</div>
+        <div class="disclaimer-box"><strong>⚠ Disclaimer:</strong> QuantSigma is a data analytics platform. Nothing here constitutes investment, trading, or financial advice. Not SEBI registered.</div>
       </div>
       <div class="footer-col"><h5>Product</h5><a href="#">Crypto Scanner</a><a href="#">Pricing</a><a href="#">API Access</a><a href="#">Changelog</a></div>
-      <div class="footer-col"><h5>Mentorship</h5><a href="#mentorship">Program Overview</a><a href="#mentorship">Curriculum</a><a href="#" onclick="openMentorshipForm()">Apply Now</a></div>
+      <div class="footer-col"><h5>Mentorship</h5><a href="#mentorship">Program Overview</a><a href="#" onclick="openMentorshipForm()">Apply Now</a></div>
       <div class="footer-col"><h5>Company</h5><a href="#">About</a><a href="#">Privacy Policy</a><a href="#">Terms of Service</a><a href="mailto:hello@quantsigma.in">Contact</a></div>
     </div>
     <div class="footer-bottom">
@@ -951,30 +994,52 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
 <div class="overlay" id="overlay">
   <div class="modal">
     <button class="modal-x" onclick="closeModal()">×</button>
-    <div class="modal-tabs">
-      <button class="mtab" id="tab-su" onclick="switchTab('signup')">Sign Up</button>
-      <button class="mtab" id="tab-li" onclick="switchTab('login')">Log In</button>
+
+    <!-- Login / Signup tabs -->
+    <div id="auth-section">
+      <div class="modal-tabs">
+        <button class="mtab" id="tab-su" onclick="switchTab('signup')">Sign Up</button>
+        <button class="mtab" id="tab-li" onclick="switchTab('login')">Log In</button>
+      </div>
+
+      <!-- SIGNUP -->
+      <div id="form-signup">
+        <h2>Create account</h2>
+        <p class="modal-sub">2-day free trial · No credit card required</p>
+        <div class="form-err" id="su-err"></div>
+        <div class="form-ok"  id="su-ok"></div>
+        <div class="fgrp"><label>Full Name</label><input type="text"     id="su-name"  placeholder="Rahul Kumar"/></div>
+        <div class="fgrp"><label>Email</label>    <input type="email"    id="su-email" placeholder="you@example.com"/></div>
+        <div class="fgrp"><label>Password</label> <input type="password" id="su-pass"  placeholder="Min. 8 characters"/></div>
+        <button class="modal-submit" id="su-btn" onclick="doSignup()">Create Account</button>
+        <p class="form-note">By signing up you agree to our Terms &amp; Privacy Policy</p>
+      </div>
+
+      <!-- LOGIN -->
+      <div id="form-login" style="display:none">
+        <h2>Welcome back</h2>
+        <p class="modal-sub">Log in to your QuantSigma account</p>
+        <div class="form-err" id="li-err"></div>
+        <div class="form-ok"  id="li-ok"></div>
+        <div class="fgrp"><label>Email</label><input type="email"    id="li-email" placeholder="you@example.com"/></div>
+        <div class="fgrp"><label>Password</label><input type="password" id="li-pass" placeholder="Your password"/></div>
+        <span class="forgot-link" onclick="showForgotPassword()">Forgot password?</span>
+        <button class="modal-submit" id="li-btn" onclick="doLogin()">Log In</button>
+        <div class="resend-link" id="resend-verify" onclick="resendVerification()">
+          Didn't get verification email? Resend it →
+        </div>
+      </div>
     </div>
-    <div id="form-signup">
-      <h2>Create account</h2>
-      <p class="modal-sub">2-day free trial · No credit card required</p>
-      <div class="form-err" id="su-err"></div>
-      <div class="form-ok"  id="su-ok"></div>
-      <div class="fgrp"><label>Full Name</label><input type="text"     id="su-name"  placeholder="Rahul Kumar"/></div>
-      <div class="fgrp"><label>Email</label>    <input type="email"    id="su-email" placeholder="you@example.com"/></div>
-      <div class="fgrp"><label>Password</label> <input type="password" id="su-pass"  placeholder="Min. 8 characters"/></div>
-      <button class="modal-submit" id="su-btn" onclick="doSignup()">Create Account</button>
-      <p class="form-note">By signing up you agree to our Terms &amp; Privacy Policy</p>
-    </div>
-    <div id="form-login" style="display:none">
-      <h2>Welcome back</h2>
-      <p class="modal-sub">Log in to your QuantSigma dashboard</p>
-      <div class="form-err" id="li-err"></div>
-      <div class="form-ok"  id="li-ok"></div>
-      <div class="fgrp"><label>Email</label>    <input type="email"    id="li-email" placeholder="you@example.com"/></div>
-      <div class="fgrp"><label>Password</label> <input type="password" id="li-pass"  placeholder="Your password"/></div>
-      <button class="modal-submit" id="li-btn" onclick="doLogin()">Log In</button>
-      <p class="form-note"><a href="#" style="color:var(--accent)">Forgot password?</a></p>
+
+    <!-- FORGOT PASSWORD -->
+    <div id="forgot-section" style="display:none">
+      <h2>Reset Password</h2>
+      <p class="modal-sub">Enter your email and we'll send a reset link</p>
+      <div class="form-err" id="fp-err"></div>
+      <div class="form-ok"  id="fp-ok"></div>
+      <div class="fgrp"><label>Email</label><input type="email" id="fp-email" placeholder="you@example.com"/></div>
+      <button class="modal-submit" id="fp-btn" onclick="doForgotPassword()">Send Reset Link</button>
+      <p class="form-note" style="cursor:pointer;color:var(--accent)" onclick="showAuthSection()">← Back to Login</p>
     </div>
   </div>
 </div>
@@ -989,46 +1054,21 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         <button class="btn btn-ghost" onclick="closeAdmin()">✕ Close</button>
       </div>
     </div>
-
-    <!-- Users -->
     <div class="admin-section">
       <h3>👥 Users</h3>
       <div class="admin-table-wrap">
         <table class="admin-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Plan</th>
-              <th>Trial End</th>
-              <th>Joined</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="admin-users-body">
-            <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text3)">Loading...</td></tr>
-          </tbody>
+          <thead><tr><th>Name</th><th>Email</th><th>Plan</th><th>Trial End</th><th>Joined</th><th>Action</th></tr></thead>
+          <tbody id="admin-users-body"><tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text3)">Loading...</td></tr></tbody>
         </table>
       </div>
     </div>
-
-    <!-- Mentorship Applications -->
     <div class="admin-section">
       <h3>🎓 Mentorship Applications</h3>
       <div class="admin-table-wrap">
         <table class="admin-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Phone</th>
-              <th>Plan</th>
-              <th>Date</th>
-            </tr>
-          </thead>
-          <tbody id="admin-apps-body">
-            <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3)">Loading...</td></tr>
-          </tbody>
+          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Plan</th><th>Date</th></tr></thead>
+          <tbody id="admin-apps-body"><tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3)">Loading...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -1042,7 +1082,9 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
 // ── Modal ─────────────────────────────────────────────
 function openModal(t) {
   document.getElementById('overlay').classList.add('open');
-  switchTab(t); document.body.style.overflow = 'hidden';
+  showAuthSection();
+  switchTab(t);
+  document.body.style.overflow = 'hidden';
 }
 function closeModal() {
   document.getElementById('overlay').classList.remove('open');
@@ -1054,6 +1096,14 @@ function switchTab(t) {
   document.getElementById('tab-su').className = 'mtab'+(t==='signup'?' on':'');
   document.getElementById('tab-li').className = 'mtab'+(t==='login' ?' on':'');
 }
+function showForgotPassword() {
+  document.getElementById('auth-section').style.display   = 'none';
+  document.getElementById('forgot-section').style.display = 'block';
+}
+function showAuthSection() {
+  document.getElementById('auth-section').style.display   = 'block';
+  document.getElementById('forgot-section').style.display = 'none';
+}
 document.getElementById('overlay').addEventListener('click', e => {
   if (e.target.id==='overlay') closeModal();
 });
@@ -1062,16 +1112,16 @@ document.getElementById('overlay').addEventListener('click', e => {
 function openMentorshipForm() {
   const f = document.getElementById('mentorship-form');
   f.style.display = 'block';
-  setTimeout(() => f.scrollIntoView({behavior:'smooth',block:'center'}), 100);
+  setTimeout(()=>f.scrollIntoView({behavior:'smooth',block:'center'}),100);
 }
 
 // ── Toast ─────────────────────────────────────────────
 function showToast(msg) {
   const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3500);
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),3500);
 }
-function showMsg(el, msg) { el.textContent = msg; el.style.display = 'block'; }
+function showMsg(el,msg){el.textContent=msg;el.style.display='block';}
 
 // ── Scanner access control ────────────────────────────
 let scannerStarted = false;
@@ -1080,8 +1130,8 @@ function unlockScanner(trialHoursLeft) {
   document.getElementById('scanner-gate').style.display    = 'none';
   document.getElementById('scanner-content').style.display = 'block';
   if (trialHoursLeft) {
-    const banner = document.getElementById('trial-banner');
-    banner.style.display = 'flex';
+    const b = document.getElementById('trial-banner');
+    b.style.display = 'flex';
     document.getElementById('trial-hours').textContent = trialHoursLeft;
   }
   if (!scannerStarted) {
@@ -1097,17 +1147,25 @@ function lockScanner(reason) {
   document.getElementById('trial-banner').style.display    = 'none';
   const gate = document.getElementById('scanner-gate');
   gate.style.display = 'flex';
-  if (reason === 'guest') {
-    gate.innerHTML = `<div class="gate-box">
+  if (reason==='guest') {
+    gate.innerHTML=`<div class="gate-box">
       <div class="gate-icon">🔒</div>
       <h3>Sign in to access the scanner</h3>
-      <p>Create a free account to get 2-day full access to the live momentum scanner. No credit card required.</p>
+      <p>Create a free account to get 2-day full access. No credit card required.</p>
       <div class="gate-btns">
         <button class="btn btn-primary btn-lg" onclick="openModal('signup')">Start Free Trial</button>
         <button class="btn btn-ghost btn-lg" onclick="openModal('login')">Log In</button>
       </div></div>`;
-  } else if (reason === 'expired') {
-    gate.innerHTML = `<div class="gate-box">
+  } else if (reason==='unverified') {
+    gate.innerHTML=`<div class="gate-box">
+      <div class="gate-icon">📧</div>
+      <h3>Verify your email to continue</h3>
+      <p>We sent a verification link to your email. Click it to activate your account and access the scanner.</p>
+      <div class="gate-btns">
+        <button class="btn btn-primary btn-lg" onclick="resendVerification()">Resend Verification Email</button>
+      </div></div>`;
+  } else if (reason==='expired') {
+    gate.innerHTML=`<div class="gate-box">
       <div class="gate-icon">⏰</div>
       <h3>Your free trial has expired</h3>
       <p>Upgrade to Pro to continue accessing the live momentum scanner.</p>
@@ -1116,7 +1174,7 @@ function lockScanner(reason) {
           onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">View Plans — from ₹1,499/mo</button>
       </div></div>`;
   } else {
-    gate.innerHTML = `<div class="gate-box">
+    gate.innerHTML=`<div class="gate-box">
       <div class="gate-icon">⚠</div>
       <h3>Unable to verify access</h3>
       <p>Please log out and log in again.</p>
@@ -1131,19 +1189,19 @@ const RAILWAY_URL = 'https://quantsigma-production.up.railway.app';
 
 async function fetchMomentum() {
   try {
-    const r = await fetch(`${RAILWAY_URL}/api/momentum`, {signal:AbortSignal.timeout(10000)});
-    if (!r.ok) throw new Error('Server error '+r.status);
+    const r = await fetch(`${RAILWAY_URL}/api/momentum`,{signal:AbortSignal.timeout(10000)});
+    if(!r.ok) throw new Error('Server error '+r.status);
     const d = await r.json();
     document.getElementById('s-total').textContent = d.total||'—';
     document.getElementById('last-ts').textContent  = 'Last updated: '+new Date(d.ts).toLocaleTimeString();
-    if (!d.top5||d.top5.length===0) {
-      document.getElementById('scanner-body').innerHTML =
+    if(!d.top5||d.top5.length===0){
+      document.getElementById('scanner-body').innerHTML=
         `<tr><td colspan="7"><div class="loading-state"><div class="spin">⏳</div>
         <div>Building rolling history...</div>
         <div class="warming-note">⚠ Scores appear in ~10 seconds</div></div></td></tr>`;
     } else { renderTable(d.top5); }
   } catch(e) {
-    document.getElementById('scanner-body').innerHTML =
+    document.getElementById('scanner-body').innerHTML=
       `<tr><td colspan="7"><div class="error-state">⚠ ${e.message}</div></td></tr>`;
   }
 }
@@ -1160,10 +1218,10 @@ function fmtVol(n){if(n>=1e9)return(n/1e9).toFixed(2)+'B';if(n>=1e6)return(n/1e6
 function scoreColor(s){return s>10?'#00e676':s>0?'#69f0ae':s>-10?'#ff5252':'#d50000';}
 function hue(sym){return(sym.charCodeAt(0)*37+sym.charCodeAt(1)*17)%360;}
 
-function renderTable(rows) {
-  document.getElementById('scanner-body').innerHTML = rows.map((r,i) => {
+function renderTable(rows){
+  document.getElementById('scanner-body').innerHTML=rows.map((r,i)=>{
     const rs=RANK_STYLE[i],sym=r.symbol.replace('USDT',''),h=hue(r.symbol),sc=scoreColor(r.score);
-    return `<tr>
+    return`<tr>
       <td><div class="rank-badge" style="background:${rs.bg};border:1.5px solid ${rs.border};color:${rs.color}">${i+1}</div></td>
       <td><div class="coin-cell">
         <div class="coin-avatar" style="background:hsl(${h},55%,15%);border:1.5px solid hsl(${h},55%,35%);color:hsl(${h},75%,65%)">${sym.slice(0,2)}</div>
