@@ -5,14 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Quant Sigma — Real-Time Trading Intelligence</title>
 
+<!-- Razorpay SDK -->
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
+<!-- EmailJS SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
 <script type="module">
   import { initializeApp }                           from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword,
            signInWithEmailAndPassword, onAuthStateChanged,
            signOut }                                 from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
   import { getFirestore, collection, addDoc, getDocs,
-           query, where, serverTimestamp }           from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+           getDoc, doc, updateDoc,
+           query, where, orderBy,
+           serverTimestamp }                         from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
 
+  // ── Firebase config ───────────────────────────────
   const firebaseConfig = {
     apiKey:            "AIzaSyDmTvYPDUslY7d-8Bz-9uSNi5Kf_Gi9sNc",
     authDomain:        "quantsigma-d5145.firebaseapp.com",
@@ -26,15 +35,38 @@
   const auth = getAuth(app);
   const db   = getFirestore(app);
 
-  // ── AUTH STATE — runs on every page load ──────────────
+  // ── EmailJS init ──────────────────────────────────
+  emailjs.init('LZ4T7bnlH_5CpAwhm');
+
+  // ── Admin email ───────────────────────────────────
+  const ADMIN_EMAIL = 'ganeshbn1998@gmail.com';
+
+  // ── Razorpay Key ID (safe to expose in frontend) ──
+  const RZP_KEY_ID  = 'rzp_live_SXll5jt40HY9nM';
+
+  // ── Plans config ──────────────────────────────────
+  const PLANS = {
+    pro:   { name: 'Pro',            amount: 149900, desc: 'Full scanner access · 200+ pairs · 10s refresh' },
+    elite: { name: 'Elite + Mentor', amount: 499900, desc: 'Pro + 2 live sessions + strategy reviews' }
+  };
+
+  // ── Current user state ────────────────────────────
+  let currentUser     = null;
+  let currentUserDoc  = null;
+  let currentUserRef  = null;
+
+  // ══════════════════════════════════════════════════
+  //  AUTH STATE
+  // ══════════════════════════════════════════════════
   onAuthStateChanged(auth, async user => {
     const loginBtn  = document.getElementById('nav-login');
     const signupBtn = document.getElementById('nav-signup');
     const logoutBtn = document.getElementById('nav-logout');
     const userLabel = document.getElementById('nav-user');
+    const adminLink = document.getElementById('nav-admin');
 
     if (user) {
-      // User is logged in — update nav
+      currentUser = user;
       if (loginBtn)  loginBtn.style.display  = 'none';
       if (signupBtn) signupBtn.style.display = 'none';
       if (logoutBtn) logoutBtn.style.display = 'inline-flex';
@@ -42,29 +74,29 @@
         userLabel.style.display = 'inline-flex';
         userLabel.textContent   = user.email.split('@')[0];
       }
+      // Show admin link if admin
+      if (adminLink && user.email === ADMIN_EMAIL) {
+        adminLink.style.display = 'inline-flex';
+      }
 
-      // Check trial / subscription status from Firestore
+      // Check access
       try {
         const snap = await getDocs(query(
           collection(db, 'users'),
           where('uid', '==', user.uid)
         ));
-
         if (!snap.empty) {
-          const data     = snap.docs[0].data();
-          const trialEnd = data.trialEnd?.toDate?.() || new Date(data.trialEnd);
-          const plan     = data.plan || 'trial';
+          currentUserDoc = snap.docs[0].data();
+          currentUserRef = snap.docs[0].ref;
+          const trialEnd = currentUserDoc.trialEnd?.toDate?.() || new Date(currentUserDoc.trialEnd);
+          const plan     = currentUserDoc.plan || 'trial';
           const now      = new Date();
-
           if (plan === 'pro' || plan === 'elite') {
-            // Paid subscriber — full access no banner
             unlockScanner(null);
           } else if (trialEnd > now) {
-            // Trial still active — show hours left
             const hoursLeft = Math.ceil((trialEnd - now) / 36e5);
             unlockScanner(hoursLeft);
           } else {
-            // Trial expired
             lockScanner('expired');
           }
         } else {
@@ -73,18 +105,22 @@
       } catch(e) {
         lockScanner('error');
       }
-
     } else {
-      // Not logged in
+      currentUser    = null;
+      currentUserDoc = null;
+      currentUserRef = null;
       if (loginBtn)  loginBtn.style.display  = 'inline-flex';
       if (signupBtn) signupBtn.style.display = 'inline-flex';
       if (logoutBtn) logoutBtn.style.display = 'none';
       if (userLabel) userLabel.style.display = 'none';
+      if (adminLink) adminLink.style.display = 'none';
       lockScanner('guest');
     }
   });
 
-  // ── SIGNUP ────────────────────────────────────────────
+  // ══════════════════════════════════════════════════
+  //  SIGNUP
+  // ══════════════════════════════════════════════════
   window.doSignup = async function() {
     const name  = document.getElementById('su-name').value.trim();
     const email = document.getElementById('su-email').value.trim();
@@ -92,8 +128,7 @@
     const err   = document.getElementById('su-err');
     const ok    = document.getElementById('su-ok');
     const btn   = document.getElementById('su-btn');
-    err.style.display = 'none';
-    ok.style.display  = 'none';
+    err.style.display = 'none'; ok.style.display = 'none';
 
     if (!name)                return showMsg(err, 'Please enter your full name.');
     if (!email.includes('@')) return showMsg(err, 'Please enter a valid email.');
@@ -103,17 +138,11 @@
     try {
       const cred     = await createUserWithEmailAndPassword(auth, email, pass);
       const trialEnd = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
-
-      // Save user to Firestore
       await addDoc(collection(db, 'users'), {
-        uid:       cred.user.uid,
-        name:      name,
-        email:     email,
-        plan:      'trial',
-        trialEnd:  trialEnd,
+        uid: cred.user.uid, name, email,
+        plan: 'trial', trialEnd,
         createdAt: serverTimestamp()
       });
-
       showMsg(ok, `Welcome, ${name}! Your 2-day trial is active.`);
       setTimeout(() => { closeModal(); showToast(`✓ Logged in as ${name}`); }, 1200);
     } catch(e) {
@@ -128,15 +157,16 @@
     }
   };
 
-  // ── LOGIN ─────────────────────────────────────────────
+  // ══════════════════════════════════════════════════
+  //  LOGIN
+  // ══════════════════════════════════════════════════
   window.doLogin = async function() {
     const email = document.getElementById('li-email').value.trim();
     const pass  = document.getElementById('li-pass').value;
     const err   = document.getElementById('li-err');
     const ok    = document.getElementById('li-ok');
     const btn   = document.getElementById('li-btn');
-    err.style.display = 'none';
-    ok.style.display  = 'none';
+    err.style.display = 'none'; ok.style.display = 'none';
 
     if (!email || !pass) return showMsg(err, 'Please fill in all fields.');
 
@@ -147,10 +177,9 @@
       setTimeout(() => { closeModal(); showToast('✓ Logged in successfully'); }, 1000);
     } catch(e) {
       const msgs = {
-        'auth/user-not-found':       'No account found with this email.',
-        'auth/wrong-password':       'Incorrect password. Please try again.',
-        'auth/invalid-email':        'Please enter a valid email address.',
-        'auth/invalid-credential':   'Incorrect email or password.'
+        'auth/user-not-found':     'No account found with this email.',
+        'auth/wrong-password':     'Incorrect password. Please try again.',
+        'auth/invalid-credential': 'Incorrect email or password.'
       };
       showMsg(err, msgs[e.code] || e.message);
     } finally {
@@ -158,13 +187,73 @@
     }
   };
 
-  // ── LOGOUT ────────────────────────────────────────────
+  // ══════════════════════════════════════════════════
+  //  LOGOUT
+  // ══════════════════════════════════════════════════
   window.doLogout = async function() {
     await signOut(auth);
     showToast('Logged out successfully');
   };
 
-  // ── MENTORSHIP APPLICATION ────────────────────────────
+  // ══════════════════════════════════════════════════
+  //  RAZORPAY PAYMENT
+  // ══════════════════════════════════════════════════
+  window.startPayment = async function(planKey) {
+    if (!currentUser) { openModal('login'); return; }
+
+    const plan = PLANS[planKey];
+    if (!plan) return;
+
+    const options = {
+      key:         RZP_KEY_ID,
+      amount:      plan.amount,       // in paise
+      currency:    'INR',
+      name:        'QuantSigma',
+      description: plan.desc,
+      image:       'https://quantsigma.in/favicon.ico',
+      prefill: {
+        name:  currentUserDoc?.name  || '',
+        email: currentUser.email     || '',
+      },
+      theme: { color: '#00c4e8' },
+
+      handler: async function(response) {
+        // Payment successful — update Firestore
+        try {
+          if (currentUserRef) {
+            const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            await updateDoc(currentUserRef, {
+              plan:              planKey,
+              razorpayPaymentId: response.razorpay_payment_id,
+              subscriptionStart: serverTimestamp(),
+              subscriptionEnd:   expiresAt
+            });
+            showToast(`✅ Payment successful! ${plan.name} plan activated.`);
+            // Refresh page to unlock scanner
+            setTimeout(() => location.reload(), 1500);
+          }
+        } catch(e) {
+          showToast('Payment received but activation failed. Contact support.');
+        }
+      },
+
+      modal: {
+        ondismiss: function() {
+          showToast('Payment cancelled.');
+        }
+      }
+    };
+
+    const rzp = new Razorpay(options);
+    rzp.on('payment.failed', function(resp) {
+      showToast('❌ Payment failed: ' + resp.error.description);
+    });
+    rzp.open();
+  };
+
+  // ══════════════════════════════════════════════════
+  //  MENTORSHIP APPLICATION + EMAILJS
+  // ══════════════════════════════════════════════════
   window.submitMentorship = async function() {
     const name    = document.getElementById('m-name').value.trim();
     const email   = document.getElementById('m-email').value.trim();
@@ -174,8 +263,7 @@
     const err     = document.getElementById('m-err');
     const ok      = document.getElementById('m-ok');
     const btn     = document.getElementById('m-btn');
-    err.style.display = 'none';
-    ok.style.display  = 'none';
+    err.style.display = 'none'; ok.style.display = 'none';
 
     if (!name)                return showMsg(err, 'Please enter your name.');
     if (!email.includes('@')) return showMsg(err, 'Please enter a valid email.');
@@ -183,20 +271,124 @@
 
     btn.disabled = true; btn.textContent = 'Submitting...';
     try {
+      // Save to Firestore
       await addDoc(collection(db, 'mentorship_applications'), {
         name, email, phone, plan, message,
-        status:    'pending',
-        createdAt: serverTimestamp()
+        status: 'pending', createdAt: serverTimestamp()
       });
-      showMsg(ok, 'Application submitted! We will contact you within 24 hours.');
+
+      // Send email via EmailJS
+      await emailjs.send('service_k58nt1r', 'template_2625798', {
+        from_name:  name,
+        from_email: email,
+        phone:      phone,
+        plan:       plan,
+        message:    message || 'No message provided',
+        time:       new Date().toLocaleString()
+      });
+
+      showMsg(ok, '✅ Application submitted! We will contact you within 24 hours.');
       ['m-name','m-email','m-phone','m-message'].forEach(id => {
         document.getElementById(id).value = '';
       });
     } catch(e) {
       showMsg(err, 'Failed to submit. Please try again.');
+      console.error(e);
     } finally {
       btn.disabled = false; btn.textContent = 'Submit Application';
     }
+  };
+
+  // ══════════════════════════════════════════════════
+  //  ADMIN PANEL
+  // ══════════════════════════════════════════════════
+  window.openAdmin = async function() {
+    if (!currentUser || currentUser.email !== ADMIN_EMAIL) {
+      showToast('Access denied.');
+      return;
+    }
+    document.getElementById('admin-overlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    await loadAdminData();
+  };
+
+  window.closeAdmin = function() {
+    document.getElementById('admin-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+  };
+
+  async function loadAdminData() {
+    // Load users
+    try {
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const users     = usersSnap.docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() }));
+      renderAdminUsers(users);
+    } catch(e) { console.error('Users load error:', e); }
+
+    // Load mentorship applications
+    try {
+      const appSnap = await getDocs(collection(db, 'mentorship_applications'));
+      const apps    = appSnap.docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() }));
+      renderAdminApps(apps);
+    } catch(e) { console.error('Apps load error:', e); }
+  }
+
+  function renderAdminUsers(users) {
+    const tbody = document.getElementById('admin-users-body');
+    if (!users.length) { tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text3)">No users yet</td></tr>'; return; }
+    tbody.innerHTML = users.map(u => {
+      const trialEnd  = u.trialEnd?.toDate?.() || new Date(u.trialEnd);
+      const trialStr  = trialEnd ? trialEnd.toLocaleDateString() : '—';
+      const planBadge = u.plan === 'pro' ? 'badge-pro' : u.plan === 'elite' ? 'badge-elite' : 'badge-trial';
+      return `<tr>
+        <td>${u.name || '—'}</td>
+        <td>${u.email}</td>
+        <td><span class="admin-badge ${planBadge}">${u.plan || 'trial'}</span></td>
+        <td>${trialStr}</td>
+        <td>${u.createdAt?.toDate?.()?.toLocaleDateString() || '—'}</td>
+        <td>
+          <select class="admin-plan-select" onchange="upgradePlan('${u.id}', this.value)">
+            <option value="">Change plan</option>
+            <option value="trial">Trial</option>
+            <option value="pro">Pro</option>
+            <option value="elite">Elite</option>
+          </select>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderAdminApps(apps) {
+    const tbody = document.getElementById('admin-apps-body');
+    if (!apps.length) { tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3)">No applications yet</td></tr>'; return; }
+    tbody.innerHTML = apps.map(a => `<tr>
+      <td>${a.name}</td>
+      <td>${a.email}</td>
+      <td>${a.phone || '—'}</td>
+      <td><span class="admin-badge badge-pro">${a.plan}</span></td>
+      <td>${a.createdAt?.toDate?.()?.toLocaleDateString() || '—'}</td>
+    </tr>`).join('');
+  }
+
+  window.upgradePlan = async function(docId, newPlan) {
+    if (!newPlan) return;
+    try {
+      const ref = doc(db, 'users', docId);
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await updateDoc(ref, {
+        plan:            newPlan,
+        subscriptionEnd: newPlan === 'trial' ? null : expiresAt
+      });
+      showToast(`✅ Plan updated to ${newPlan}`);
+      await loadAdminData();
+    } catch(e) {
+      showToast('Failed to update plan.');
+    }
+  };
+
+  window.refreshAdmin = async function() {
+    showToast('Refreshing...');
+    await loadAdminData();
   };
 </script>
 
@@ -237,6 +429,8 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(7,9,15,0.95)
 .btn-outline:hover{background:rgba(0,196,232,.08)}
 .btn-logout{background:transparent;border:1px solid var(--border2);color:var(--text3);display:none}
 .btn-logout:hover{border-color:var(--red);color:var(--red)}
+.btn-admin{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--yellow);display:none;font-size:.75rem}
+.btn-admin:hover{background:rgba(245,158,11,.2)}
 
 /* HERO */
 .hero{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:80px 28px 60px;position:relative;overflow:hidden}
@@ -301,20 +495,14 @@ td:first-child,td:nth-child(2){text-align:left}
 .scanner-footer{background:var(--bg3);border-top:1px solid var(--border);padding:10px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 .scanner-footer span{font-size:.7rem;color:var(--text3)}
 .scanner-note{font-size:.68rem;color:rgba(255,159,67,.6);background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.1);padding:3px 10px;border-radius:4px}
-
-/* GATE (locked scanner) */
 .scanner-gate{display:flex;align-items:center;justify-content:center;min-height:320px;padding:40px 20px}
 .gate-box{text-align:center;max-width:420px}
 .gate-icon{font-size:2.5rem;margin-bottom:16px}
 .gate-box h3{font-size:1.1rem;font-weight:800;color:#fff;margin-bottom:10px}
 .gate-box p{font-size:.85rem;color:var(--text2);line-height:1.65;margin-bottom:24px}
 .gate-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
-
-/* TRIAL BANNER */
 .trial-banner{display:none;align-items:center;justify-content:space-between;padding:10px 20px;background:rgba(245,158,11,.07);border-bottom:1px solid rgba(245,158,11,.15);flex-wrap:wrap;gap:8px}
 .trial-banner span{font-size:.78rem;color:var(--yellow)}
-
-/* LOADING / ERROR */
 .loading-state{padding:60px;text-align:center;color:var(--text2);font-size:.85rem}
 .spin{display:inline-block;animation:spin 1s linear infinite;font-size:1.5rem;margin-bottom:10px}
 @keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
@@ -363,7 +551,7 @@ td:first-child,td:nth-child(2){text-align:left}
 .mod-num{width:32px;height:32px;min-width:32px;border-radius:6px;background:linear-gradient(135deg,var(--accent2),var(--accent));display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;color:#fff}
 .module h4{font-size:.85rem;font-weight:700;color:#fff;margin-bottom:4px}
 .module p{font-size:.77rem;color:var(--text2);line-height:1.5}
-.mentor-form{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:32px;margin-top:56px;max-width:600px;margin-left:auto;margin-right:auto}
+.mentor-form{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:32px;max-width:600px;margin:56px auto 0}
 .mentor-form h3{font-size:1.1rem;font-weight:800;color:#fff;margin-bottom:6px}
 .mentor-form p{font-size:.82rem;color:var(--text2);margin-bottom:24px}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -406,7 +594,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
 .footer-bottom{border-top:1px solid var(--border);padding-top:20px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 .footer-bottom p{font-size:.72rem;color:var(--text3)}
 
-/* MODAL */
+/* AUTH MODAL */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:200;display:none;align-items:center;justify-content:center;padding:20px}
 .overlay.open{display:flex}
 .modal{background:var(--card);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:400px;padding:32px;position:relative}
@@ -424,8 +612,29 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
 .form-err{font-size:.75rem;color:var(--red);margin-bottom:10px;padding:8px 10px;background:rgba(255,68,68,.07);border:1px solid rgba(255,68,68,.15);border-radius:5px;display:none}
 .form-ok{font-size:.75rem;color:var(--green);margin-bottom:10px;padding:8px 10px;background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.15);border-radius:5px;display:none}
 
+/* ADMIN PANEL */
+.admin-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);z-index:300;display:none;flex-direction:column}
+.admin-overlay.open{display:flex}
+.admin-panel{background:var(--bg2);flex:1;overflow:auto;padding:28px}
+.admin-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;flex-wrap:wrap;gap:12px}
+.admin-header h2{font-size:1.2rem;font-weight:800;color:#fff}
+.admin-header-actions{display:flex;gap:8px}
+.admin-section{margin-bottom:36px}
+.admin-section h3{font-size:.85rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.admin-table-wrap{overflow-x:auto;background:var(--card);border:1px solid var(--border);border-radius:10px}
+.admin-table{width:100%;border-collapse:collapse;font-size:.8rem}
+.admin-table th{padding:10px 14px;text-align:left;color:var(--text3);font-size:.68rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--bg3);border-bottom:1px solid var(--border)}
+.admin-table td{padding:11px 14px;border-bottom:1px solid rgba(26,34,53,.5);color:var(--text2)}
+.admin-table tr:last-child td{border-bottom:none}
+.admin-badge{padding:2px 8px;border-radius:4px;font-size:.68rem;font-weight:700;text-transform:uppercase}
+.badge-trial{background:rgba(100,116,139,.15);color:#94a3b8}
+.badge-pro{background:rgba(0,196,232,.12);color:var(--accent)}
+.badge-elite{background:rgba(109,40,217,.15);color:#a78bfa}
+.admin-plan-select{background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:4px 8px;border-radius:5px;font-size:.75rem;cursor:pointer;outline:none}
+.admin-plan-select:focus{border-color:var(--accent)}
+
 /* TOAST */
-.toast{position:fixed;bottom:24px;right:24px;z-index:300;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:12px 18px;font-size:.82rem;color:var(--text);display:none;align-items:center;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.toast{position:fixed;bottom:24px;right:24px;z-index:400;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:12px 18px;font-size:.82rem;color:var(--text);display:none;align-items:center;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
 .toast.show{display:flex}
 
 @media(max-width:900px){
@@ -458,6 +667,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
     </div>
     <div class="nav-actions">
       <span class="nav-user" id="nav-user"></span>
+      <button class="btn btn-admin" id="nav-admin" onclick="openAdmin()">⚙ Admin</button>
       <button class="btn btn-ghost" id="nav-login" onclick="openModal('login')">Log In</button>
       <button class="btn btn-primary" id="nav-signup" onclick="openModal('signup')">Start Free Trial</button>
       <button class="btn btn-logout" id="nav-logout" onclick="doLogout()">Log Out</button>
@@ -494,7 +704,6 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
       <p>Rolling 5-minute window across Binance USDT-M perpetuals. Crypto only. Stocks excluded.</p>
     </div>
     <div class="scanner-wrap">
-      <!-- Top bar -->
       <div class="scanner-topbar">
         <div class="scanner-title-group">
           <div class="live-indicator"><span class="live-dot"></span>Live</div>
@@ -503,22 +712,16 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         </div>
         <div class="countdown-pill">Refreshes in <span class="cd-num" id="cd">10</span>s</div>
       </div>
-
-      <!-- Stats row -->
       <div class="stats-row">
         <div class="stat-cell"><div class="sv" id="s-total">—</div><div class="sl">Pairs Scanned</div></div>
         <div class="stat-cell"><div class="sv">Binance Futures</div><div class="sl">Exchange</div></div>
         <div class="stat-cell"><div class="sv">5 Min Rolling</div><div class="sl">Window</div></div>
       </div>
-
-      <!-- Trial banner — only shown during active trial -->
       <div class="trial-banner" id="trial-banner">
         <span>⏳ Trial active — <strong id="trial-hours"></strong> hours remaining</span>
         <button class="btn btn-primary" style="font-size:.75rem;padding:5px 14px"
           onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Upgrade to Pro</button>
       </div>
-
-      <!-- GATE — shown when not logged in or trial expired -->
       <div class="scanner-gate" id="scanner-gate">
         <div class="gate-box">
           <div class="gate-icon">🔒</div>
@@ -526,8 +729,6 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
           <p>Please wait</p>
         </div>
       </div>
-
-      <!-- SCANNER TABLE — shown only when access verified -->
       <div id="scanner-content" style="display:none">
         <div class="table-wrap">
           <table>
@@ -543,11 +744,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
               </tr>
             </thead>
             <tbody id="scanner-body">
-              <tr><td colspan="7"><div class="loading-state">
-                <div class="spin">⏳</div>
-                <div>Connecting to scanner...</div>
-                <div class="warming-note">⚠ Scores appear after ~10 seconds</div>
-              </div></td></tr>
+              <tr><td colspan="7"><div class="loading-state"><div class="spin">⏳</div><div>Connecting to scanner...</div><div class="warming-note">⚠ Scores appear after ~10 seconds</div></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -556,7 +753,6 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
           <span class="scanner-note">⚠ Data is for informational purposes only. Not financial advice.</span>
         </div>
       </div>
-
     </div>
   </div>
 </section>
@@ -596,8 +792,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         <div class="plan-tagline">Full scanner access for 48 hours</div>
         <ul class="plan-features">
           <li><span class="ck">✓</span>Crypto momentum scanner</li>
-          <li><span class="ck">✓</span>Top 5 results</li>
-          <li><span class="ck">✓</span>10s refresh interval</li>
+          <li><span class="ck">✓</span>Top 5 results · 10s refresh</li>
           <li class="off"><span class="xx">✗</span>Extended results (Top 20)</li>
           <li class="off"><span class="xx">✗</span>Alerts &amp; notifications</li>
           <li class="off"><span class="xx">✗</span>CSV export</li>
@@ -609,16 +804,15 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         <div class="plan-label">Pro</div>
         <div class="plan-amount"><sup>₹</sup>1,499</div>
         <div class="plan-cycle">/month · Cancel anytime</div>
-        <div class="plan-tagline">Full access, all markets</div>
+        <div class="plan-tagline">Full access · All markets</div>
         <ul class="plan-features">
           <li><span class="ck">✓</span>Everything in Free Trial</li>
           <li><span class="ck">✓</span>Top 20 momentum results</li>
-          <li><span class="ck">✓</span>Crypto scanner (200+ pairs)</li>
-          <li><span class="ck">✓</span>Custom score thresholds</li>
+          <li><span class="ck">✓</span>200+ crypto pairs</li>
           <li><span class="ck">✓</span>CSV export</li>
           <li><span class="ck">✓</span>Priority support</li>
         </ul>
-        <button class="plan-btn plan-btn-primary" onclick="openModal('signup')">Get Pro Access</button>
+        <button class="plan-btn plan-btn-primary" onclick="startPayment('pro')">Get Pro — ₹1,499/mo</button>
       </div>
       <div class="price-card">
         <div class="plan-label">Elite + Mentorship</div>
@@ -629,11 +823,10 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
           <li><span class="ck">✓</span>Everything in Pro</li>
           <li><span class="ck">✓</span>2 live sessions/month</li>
           <li><span class="ck">✓</span>Algo strategy reviews</li>
-          <li><span class="ck">✓</span>Private community access</li>
-          <li><span class="ck">✓</span>Python scanner workshop</li>
+          <li><span class="ck">✓</span>Private community</li>
           <li><span class="ck">✓</span>API access</li>
         </ul>
-        <button class="plan-btn plan-btn-outline" onclick="openMentorshipForm()">Apply for Elite</button>
+        <button class="plan-btn plan-btn-outline" onclick="startPayment('elite')">Get Elite — ₹4,999/mo</button>
       </div>
     </div>
   </div>
@@ -662,9 +855,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         <div class="module"><div class="mod-num">04</div><div><h4>Live Session Reviews</h4><p>Bi-weekly sessions with screen-share walkthroughs, code reviews, and Q&amp;A on real scenarios.</p></div></div>
       </div>
     </div>
-
-    <!-- MENTORSHIP APPLICATION FORM -->
-    <div class="mentor-form" id="mentorship-form" style="display:none;margin-top:56px">
+    <div class="mentor-form" id="mentorship-form" style="display:none">
       <h3>Apply for Mentorship</h3>
       <p>Fill in your details and we'll get back to you within 24 hours.</p>
       <div class="form-err" id="m-err"></div>
@@ -681,7 +872,8 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
             <option value="custom">Custom / One-time session</option>
           </select>
         </div>
-        <div class="fgrp full"><label>Tell us about yourself (optional)</label>
+        <div class="fgrp full">
+          <label>Tell us about yourself (optional)</label>
           <textarea id="m-message" placeholder="Your trading background, goals, what you want to learn..."></textarea>
         </div>
       </div>
@@ -787,6 +979,62 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
   </div>
 </div>
 
+<!-- ADMIN PANEL -->
+<div class="admin-overlay" id="admin-overlay">
+  <div class="admin-panel">
+    <div class="admin-header">
+      <h2>⚙ QuantSigma Admin Panel</h2>
+      <div class="admin-header-actions">
+        <button class="btn btn-ghost" onclick="refreshAdmin()">↻ Refresh</button>
+        <button class="btn btn-ghost" onclick="closeAdmin()">✕ Close</button>
+      </div>
+    </div>
+
+    <!-- Users -->
+    <div class="admin-section">
+      <h3>👥 Users</h3>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Plan</th>
+              <th>Trial End</th>
+              <th>Joined</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="admin-users-body">
+            <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text3)">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Mentorship Applications -->
+    <div class="admin-section">
+      <h3>🎓 Mentorship Applications</h3>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Plan</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="admin-apps-body">
+            <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3)">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -794,36 +1042,34 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
 // ── Modal ─────────────────────────────────────────────
 function openModal(t) {
   document.getElementById('overlay').classList.add('open');
-  switchTab(t);
-  document.body.style.overflow = 'hidden';
+  switchTab(t); document.body.style.overflow = 'hidden';
 }
 function closeModal() {
   document.getElementById('overlay').classList.remove('open');
   document.body.style.overflow = '';
 }
 function switchTab(t) {
-  document.getElementById('form-signup').style.display = t === 'signup' ? 'block' : 'none';
-  document.getElementById('form-login').style.display  = t === 'login'  ? 'block' : 'none';
-  document.getElementById('tab-su').className = 'mtab' + (t === 'signup' ? ' on' : '');
-  document.getElementById('tab-li').className = 'mtab' + (t === 'login'  ? ' on' : '');
+  document.getElementById('form-signup').style.display = t==='signup'?'block':'none';
+  document.getElementById('form-login').style.display  = t==='login' ?'block':'none';
+  document.getElementById('tab-su').className = 'mtab'+(t==='signup'?' on':'');
+  document.getElementById('tab-li').className = 'mtab'+(t==='login' ?' on':'');
 }
 document.getElementById('overlay').addEventListener('click', e => {
-  if (e.target.id === 'overlay') closeModal();
+  if (e.target.id==='overlay') closeModal();
 });
 
 // ── Mentorship form ───────────────────────────────────
 function openMentorshipForm() {
   const f = document.getElementById('mentorship-form');
   f.style.display = 'block';
-  setTimeout(() => f.scrollIntoView({ behavior:'smooth', block:'center' }), 100);
+  setTimeout(() => f.scrollIntoView({behavior:'smooth',block:'center'}), 100);
 }
 
 // ── Toast ─────────────────────────────────────────────
 function showToast(msg) {
   const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3000);
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
 }
 function showMsg(el, msg) { el.textContent = msg; el.style.display = 'block'; }
 
@@ -838,7 +1084,6 @@ function unlockScanner(trialHoursLeft) {
     banner.style.display = 'flex';
     document.getElementById('trial-hours').textContent = trialHoursLeft;
   }
-  // Start scanner only once
   if (!scannerStarted) {
     scannerStarted = true;
     fetchMomentum();
@@ -852,39 +1097,32 @@ function lockScanner(reason) {
   document.getElementById('trial-banner').style.display    = 'none';
   const gate = document.getElementById('scanner-gate');
   gate.style.display = 'flex';
-
   if (reason === 'guest') {
-    gate.innerHTML = `
-      <div class="gate-box">
-        <div class="gate-icon">🔒</div>
-        <h3>Sign in to access the scanner</h3>
-        <p>Create a free account to get 2-day full access to the live momentum scanner. No credit card required.</p>
-        <div class="gate-btns">
-          <button class="btn btn-primary btn-lg" onclick="openModal('signup')">Start Free Trial</button>
-          <button class="btn btn-ghost btn-lg" onclick="openModal('login')">Log In</button>
-        </div>
-      </div>`;
+    gate.innerHTML = `<div class="gate-box">
+      <div class="gate-icon">🔒</div>
+      <h3>Sign in to access the scanner</h3>
+      <p>Create a free account to get 2-day full access to the live momentum scanner. No credit card required.</p>
+      <div class="gate-btns">
+        <button class="btn btn-primary btn-lg" onclick="openModal('signup')">Start Free Trial</button>
+        <button class="btn btn-ghost btn-lg" onclick="openModal('login')">Log In</button>
+      </div></div>`;
   } else if (reason === 'expired') {
-    gate.innerHTML = `
-      <div class="gate-box">
-        <div class="gate-icon">⏰</div>
-        <h3>Your free trial has expired</h3>
-        <p>Upgrade to Pro to continue accessing the live momentum scanner and all future tools.</p>
-        <div class="gate-btns">
-          <button class="btn btn-primary btn-lg"
-            onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">View Plans</button>
-        </div>
-      </div>`;
+    gate.innerHTML = `<div class="gate-box">
+      <div class="gate-icon">⏰</div>
+      <h3>Your free trial has expired</h3>
+      <p>Upgrade to Pro to continue accessing the live momentum scanner.</p>
+      <div class="gate-btns">
+        <button class="btn btn-primary btn-lg"
+          onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">View Plans — from ₹1,499/mo</button>
+      </div></div>`;
   } else {
-    gate.innerHTML = `
-      <div class="gate-box">
-        <div class="gate-icon">⚠</div>
-        <h3>Unable to verify access</h3>
-        <p>Please log out and log in again.</p>
-        <div class="gate-btns">
-          <button class="btn btn-ghost btn-lg" onclick="doLogout()">Log Out</button>
-        </div>
-      </div>`;
+    gate.innerHTML = `<div class="gate-box">
+      <div class="gate-icon">⚠</div>
+      <h3>Unable to verify access</h3>
+      <p>Please log out and log in again.</p>
+      <div class="gate-btns">
+        <button class="btn btn-ghost btn-lg" onclick="doLogout()">Log Out</button>
+      </div></div>`;
   }
 }
 
@@ -893,33 +1131,29 @@ const RAILWAY_URL = 'https://quantsigma-production.up.railway.app';
 
 async function fetchMomentum() {
   try {
-    const r = await fetch(`${RAILWAY_URL}/api/momentum`, { signal: AbortSignal.timeout(10000) });
-    if (!r.ok) throw new Error('Server error ' + r.status);
+    const r = await fetch(`${RAILWAY_URL}/api/momentum`, {signal:AbortSignal.timeout(10000)});
+    if (!r.ok) throw new Error('Server error '+r.status);
     const d = await r.json();
-    document.getElementById('s-total').textContent = d.total || '—';
-    document.getElementById('last-ts').textContent  = 'Last updated: ' + new Date(d.ts).toLocaleTimeString();
-    if (!d.top5 || d.top5.length === 0) {
+    document.getElementById('s-total').textContent = d.total||'—';
+    document.getElementById('last-ts').textContent  = 'Last updated: '+new Date(d.ts).toLocaleTimeString();
+    if (!d.top5||d.top5.length===0) {
       document.getElementById('scanner-body').innerHTML =
         `<tr><td colspan="7"><div class="loading-state"><div class="spin">⏳</div>
         <div>Building rolling history...</div>
         <div class="warming-note">⚠ Scores appear in ~10 seconds</div></div></td></tr>`;
-    } else {
-      renderTable(d.top5);
-    }
+    } else { renderTable(d.top5); }
   } catch(e) {
     document.getElementById('scanner-body').innerHTML =
-      `<tr><td colspan="7"><div class="error-state">⚠ ${e.message}
-      <br><small style="color:var(--text3);margin-top:6px;display:block">Check backend server on Railway</small>
-      </div></td></tr>`;
+      `<tr><td colspan="7"><div class="error-state">⚠ ${e.message}</div></td></tr>`;
   }
 }
 
-const RANK_STYLE = [
-  { bg:'#f59e0b1a', border:'#f59e0b', color:'#f59e0b' },
-  { bg:'#94a3b81a', border:'#94a3b8', color:'#94a3b8' },
-  { bg:'#cd7f321a', border:'#cd7f32', color:'#cd7f32' },
-  { bg:'#1a22351a', border:'#2a3060', color:'#4a5a80' },
-  { bg:'#1a22351a', border:'#2a3060', color:'#4a5a80' },
+const RANK_STYLE=[
+  {bg:'#f59e0b1a',border:'#f59e0b',color:'#f59e0b'},
+  {bg:'#94a3b81a',border:'#94a3b8',color:'#94a3b8'},
+  {bg:'#cd7f321a',border:'#cd7f32',color:'#cd7f32'},
+  {bg:'#1a22351a',border:'#2a3060',color:'#4a5a80'},
+  {bg:'#1a22351a',border:'#2a3060',color:'#4a5a80'},
 ];
 function fmtPrice(p){if(p>=1000)return p.toFixed(2);if(p>=1)return p.toFixed(3);if(p>=0.01)return p.toFixed(4);return p.toFixed(6);}
 function fmtVol(n){if(n>=1e9)return(n/1e9).toFixed(2)+'B';if(n>=1e6)return(n/1e6).toFixed(2)+'M';if(n>=1e3)return(n/1e3).toFixed(2)+'K';return n.toFixed(2);}
@@ -927,11 +1161,8 @@ function scoreColor(s){return s>10?'#00e676':s>0?'#69f0ae':s>-10?'#ff5252':'#d50
 function hue(sym){return(sym.charCodeAt(0)*37+sym.charCodeAt(1)*17)%360;}
 
 function renderTable(rows) {
-  document.getElementById('scanner-body').innerHTML = rows.map((r, i) => {
-    const rs  = RANK_STYLE[i];
-    const sym = r.symbol.replace('USDT','');
-    const h   = hue(r.symbol);
-    const sc  = scoreColor(r.score);
+  document.getElementById('scanner-body').innerHTML = rows.map((r,i) => {
+    const rs=RANK_STYLE[i],sym=r.symbol.replace('USDT',''),h=hue(r.symbol),sc=scoreColor(r.score);
     return `<tr>
       <td><div class="rank-badge" style="background:${rs.bg};border:1.5px solid ${rs.border};color:${rs.color}">${i+1}</div></td>
       <td><div class="coin-cell">
@@ -948,13 +1179,13 @@ function renderTable(rows) {
 }
 
 // ── Countdown ─────────────────────────────────────────
-let cd = 10;
-function tickCountdown() {
+let cd=10;
+function tickCountdown(){
   cd--;
-  const el = document.getElementById('cd');
-  el.textContent = cd;
-  el.className   = 'cd-num' + (cd <= 3 ? ' cd-warn' : '');
-  if (cd <= 0) { cd = 10; fetchMomentum(); }
+  const el=document.getElementById('cd');
+  el.textContent=cd;
+  el.className='cd-num'+(cd<=3?' cd-warn':'');
+  if(cd<=0){cd=10;fetchMomentum();}
 }
 
 switchTab('signup');
