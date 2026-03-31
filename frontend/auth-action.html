@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>QuantSigma — Account Action</title>
+<script type="module">
+  import { initializeApp }                              from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+  import { getAuth, applyActionCode,
+           verifyPasswordResetCode,
+           confirmPasswordReset }                       from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey:            "AIzaSyDmTvYPDUslY7d-8Bz-9uSNi5Kf_Gi9sNc",
+    authDomain:        "quantsigma-d5145.firebaseapp.com",
+    projectId:         "quantsigma-d5145",
+    storageBucket:     "quantsigma-d5145.firebasestorage.app",
+    messagingSenderId: "514111109748",
+    appId:             "1:514111109748:web:7193aca4b5379dd6c76f21"
+  };
+
+  const app  = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  // ── Read URL params ───────────────────────────────
+  const params   = new URLSearchParams(window.location.search);
+  const mode     = params.get('mode');
+  const oobCode  = params.get('oobCode');
+
+  // ── Handle action based on mode ───────────────────
+  window.addEventListener('DOMContentLoaded', async () => {
+    if (!mode || !oobCode) {
+      showError('Invalid link. Please request a new one.');
+      return;
+    }
+
+    if (mode === 'verifyEmail') {
+      await handleVerifyEmail(oobCode);
+    } else if (mode === 'resetPassword') {
+      await handleResetPassword(oobCode);
+    } else {
+      showError('Unknown action. Please try again.');
+    }
+  });
+
+  // ── Email verification ────────────────────────────
+  async function handleVerifyEmail(code) {
+    try {
+      await applyActionCode(auth, code);
+      showSuccess(
+        '✅ Email Verified!',
+        'Your email has been verified successfully. You can now log in and access the scanner.',
+        'Go to Login',
+        () => window.location.href = 'index.html'
+      );
+    } catch(e) {
+      if (e.code === 'auth/invalid-action-code') {
+        showError('This verification link has expired or already been used. Please request a new one.');
+      } else {
+        showError('Verification failed: ' + e.message);
+      }
+    }
+  }
+
+  // ── Password reset ────────────────────────────────
+  async function handleResetPassword(code) {
+    try {
+      // Verify the code is valid first
+      await verifyPasswordResetCode(auth, code);
+      // Show password reset form
+      document.getElementById('loading').style.display    = 'none';
+      document.getElementById('reset-form').style.display = 'block';
+
+      // Handle form submit
+      document.getElementById('reset-btn').addEventListener('click', async () => {
+        const newPass  = document.getElementById('new-pass').value;
+        const confPass = document.getElementById('conf-pass').value;
+        const err      = document.getElementById('reset-err');
+        err.style.display = 'none';
+
+        if (newPass.length < 8) {
+          err.textContent = 'Password must be at least 8 characters.';
+          err.style.display = 'block'; return;
+        }
+        if (newPass !== confPass) {
+          err.textContent = 'Passwords do not match.';
+          err.style.display = 'block'; return;
+        }
+
+        try {
+          await confirmPasswordReset(auth, code, newPass);
+          showSuccess(
+            '✅ Password Reset!',
+            'Your password has been updated successfully. You can now log in with your new password.',
+            'Go to Login',
+            () => window.location.href = 'index.html'
+          );
+        } catch(e) {
+          err.textContent = 'Failed to reset password. Please try again.';
+          err.style.display = 'block';
+        }
+      });
+
+    } catch(e) {
+      showError('This reset link has expired or already been used. Please request a new password reset.');
+    }
+  }
+
+  // ── UI helpers ────────────────────────────────────
+  function showSuccess(title, message, btnText, btnAction) {
+    document.getElementById('loading').style.display = 'none';
+    const box = document.getElementById('result-box');
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div class="icon">✅</div>
+      <h2>${title}</h2>
+      <p>${message}</p>
+      <button class="btn" onclick="(${btnAction.toString()})()">${btnText}</button>
+    `;
+  }
+
+  function showError(message) {
+    document.getElementById('loading').style.display = 'none';
+    const box = document.getElementById('result-box');
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div class="icon">❌</div>
+      <h2>Something went wrong</h2>
+      <p>${message}</p>
+      <button class="btn" onclick="window.location.href='index.html'">Go to Homepage</button>
+    `;
+  }
+</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#07090f;color:#d1d9e8;font-family:'Inter','Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.card{background:#0f1422;border:1px solid #1a2235;border-radius:16px;padding:48px 40px;max-width:440px;width:100%;text-align:center}
+.logo{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:36px}
+.logo-mark{width:36px;height:36px;background:linear-gradient(135deg,#00c4e8,#6d28d9);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;color:#fff}
+.logo-name{font-size:1.1rem;font-weight:800;color:#fff}
+.logo-name span{color:#00c4e8}
+.spin{font-size:2rem;display:inline-block;animation:spin 1s linear infinite;margin-bottom:14px}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+#loading p{color:#7b8db0;font-size:.9rem}
+.icon{font-size:2.5rem;margin-bottom:16px}
+h2{font-size:1.2rem;font-weight:800;color:#fff;margin-bottom:10px}
+p{font-size:.88rem;color:#7b8db0;line-height:1.65;margin-bottom:24px}
+.btn{background:#00c4e8;color:#000;font-weight:700;padding:12px 28px;border-radius:8px;border:none;cursor:pointer;font-size:.9rem;transition:.15s}
+.btn:hover{background:#00d8ff}
+.fgrp{margin-bottom:14px;text-align:left}
+.fgrp label{display:block;font-size:.72rem;font-weight:600;color:#7b8db0;margin-bottom:5px;letter-spacing:.3px}
+.fgrp input{width:100%;background:#0d1120;border:1px solid #1e2a40;border-radius:6px;padding:10px 14px;color:#d1d9e8;font-size:.88rem;outline:none;transition:.15s}
+.fgrp input:focus{border-color:#00c4e8}
+.fgrp input::placeholder{color:#3d4f6e}
+.err{font-size:.78rem;color:#ff4444;background:rgba(255,68,68,.07);border:1px solid rgba(255,68,68,.15);border-radius:5px;padding:8px 12px;margin-bottom:14px;display:none;text-align:left}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="logo-mark">QΣ</div>
+    <span class="logo-name">Quant<span>Sigma</span></span>
+  </div>
+
+  <!-- Loading state -->
+  <div id="loading">
+    <div class="spin">⚙</div>
+    <p>Processing your request...</p>
+  </div>
+
+  <!-- Result box (success or error) -->
+  <div id="result-box" style="display:none"></div>
+
+  <!-- Password reset form -->
+  <div id="reset-form" style="display:none">
+    <div class="icon">🔐</div>
+    <h2>Set New Password</h2>
+    <p>Enter your new password below.</p>
+    <div class="err" id="reset-err"></div>
+    <div class="fgrp">
+      <label>New Password</label>
+      <input type="password" id="new-pass" placeholder="Min. 8 characters"/>
+    </div>
+    <div class="fgrp">
+      <label>Confirm Password</label>
+      <input type="password" id="conf-pass" placeholder="Repeat your password"/>
+    </div>
+    <button class="btn" id="reset-btn" style="width:100%;padding:12px">Reset Password</button>
+  </div>
+</div>
+</body>
+</html>
