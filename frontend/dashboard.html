@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Dashboard — Quant Sigma</title>
+
+<script type="module">
+  import { initializeApp }                        from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+  import { getFirestore, collection, getDocs,
+           doc, updateDoc, query, where,
+           serverTimestamp }                      from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey:            "AIzaSyDmTvYPDUslY7d-8Bz-9uSNi5Kf_Gi9sNc",
+    authDomain:        "quantsigma-d5145.firebaseapp.com",
+    projectId:         "quantsigma-d5145",
+    storageBucket:     "quantsigma-d5145.firebasestorage.app",
+    messagingSenderId: "514111109748",
+    appId:             "1:514111109748:web:7193aca4b5379dd6c76f21"
+  };
+
+  const app  = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db   = getFirestore(app);
+
+  const RAILWAY_URL = 'https://quantsigma-production.up.railway.app';
+
+  let currentUser    = null;
+  let currentUserDoc = null;
+  let currentUserRef = null;
+
+  // ── Auth guard — redirect to home if not logged in ──
+  onAuthStateChanged(auth, async user => {
+    if (!user) { window.location.href = 'index.html'; return; }
+    if (!user.emailVerified) { window.location.href = 'index.html'; return; }
+
+    currentUser = user;
+
+    // Session restriction — check session token
+    try {
+      const snap = await getDocs(query(collection(db,'users'), where('uid','==',user.uid)));
+      if (!snap.empty) {
+        currentUserDoc = snap.docs[0].data();
+        currentUserRef = snap.docs[0].ref;
+
+        const mySession     = localStorage.getItem('qs_session');
+        const storedSession = currentUserDoc.sessionToken;
+
+        // If session tokens don't match — another device logged in — force logout
+        if (storedSession && mySession && storedSession !== mySession) {
+          await signOut(auth);
+          localStorage.removeItem('qs_session');
+          alert('You have been logged out because your account was accessed from another device.');
+          window.location.href = 'index.html';
+          return;
+        }
+
+        // Render dashboard
+        renderUserInfo(user, currentUserDoc);
+        checkAccess(currentUserDoc);
+        startScanner();
+      } else {
+        window.location.href = 'index.html';
+      }
+    } catch(e) {
+      console.error(e);
+    }
+  });
+
+  function renderUserInfo(user, data) {
+    const name     = data.name || user.email.split('@')[0];
+    const plan     = data.plan || 'trial';
+    const trialEnd = data.trialEnd?.toDate?.() || new Date(data.trialEnd);
+    const subEnd   = data.subscriptionEnd?.toDate?.() || null;
+    const now      = new Date();
+
+    document.getElementById('user-name').textContent    = name;
+    document.getElementById('user-email').textContent   = user.email;
+    document.getElementById('user-initial').textContent = name.charAt(0).toUpperCase();
+
+    // Plan badge
+    const planEl = document.getElementById('user-plan');
+    if (plan==='pro')   { planEl.textContent='Pro'; planEl.className='plan-badge plan-pro'; }
+    else if (plan==='elite') { planEl.textContent='Elite'; planEl.className='plan-badge plan-elite'; }
+    else { planEl.textContent='Free Trial'; planEl.className='plan-badge plan-trial'; }
+
+    // Status card
+    if (plan==='pro'||plan==='elite') {
+      const daysLeft = subEnd ? Math.ceil((subEnd-now)/864e5) : '—';
+      document.getElementById('status-title').textContent = plan==='pro'?'Pro Plan Active':'Elite Plan Active';
+      document.getElementById('status-desc').textContent  = `${daysLeft} days remaining · Renews ${subEnd?subEnd.toLocaleDateString():'—'}`;
+      document.getElementById('status-icon').textContent  = '✅';
+      document.getElementById('upgrade-btn').style.display = 'none';
+    } else {
+      const hoursLeft = trialEnd > now ? Math.ceil((trialEnd-now)/36e5) : 0;
+      if (hoursLeft > 0) {
+        document.getElementById('status-title').textContent = 'Free Trial Active';
+        document.getElementById('status-desc').textContent  = `${hoursLeft} hours remaining · Trial ends ${trialEnd.toLocaleDateString()}`;
+        document.getElementById('status-icon').textContent  = '⏳';
+      } else {
+        document.getElementById('status-title').textContent = 'Trial Expired';
+        document.getElementById('status-desc').textContent  = 'Upgrade to continue accessing scanners';
+        document.getElementById('status-icon').textContent  = '⏰';
+        document.getElementById('upgrade-btn').textContent  = 'Upgrade Now';
+      }
+    }
+
+    // Stats
+    document.getElementById('stat-plan').textContent  = plan.charAt(0).toUpperCase()+plan.slice(1);
+    document.getElementById('stat-joined').textContent = data.createdAt?.toDate?.()?.toLocaleDateString()||'—';
+  }
+
+  function checkAccess(data) {
+    const plan     = data.plan || 'trial';
+    const trialEnd = data.trialEnd?.toDate?.() || new Date(data.trialEnd);
+    const now      = new Date();
+    const hasAccess = plan==='pro' || plan==='elite' || trialEnd > now;
+
+    if (!hasAccess) {
+      // Show expired overlay on scanner
+      document.getElementById('dash-scanner-gate').style.display = 'flex';
+      document.getElementById('dash-scanner-content').style.display = 'none';
+    }
+  }
+
+  // ── Scanner ───────────────────────────────────────
+  let scannerStarted = false;
+  function startScanner() {
+    if (scannerStarted) return;
+    scannerStarted = true;
+    fetchMomentum();
+    setInterval(fetchMomentum, 10000);
+    setInterval(tickCountdown, 1000);
+  }
+
+  async function fetchMomentum() {
+    try {
+      const r = await fetch(`${RAILWAY_URL}/api/momentum`,{signal:AbortSignal.timeout(10000)});
+      if(!r.ok) throw new Error('Server error');
+      const d = await r.json();
+      document.getElementById('dash-total').textContent = d.total||'—';
+      document.getElementById('dash-ts').textContent    = 'Updated: '+new Date(d.ts).toLocaleTimeString();
+      if(!d.top5||d.top5.length===0){
+        document.getElementById('dash-scanner-body').innerHTML=
+          `<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text2)">
+          <div style="font-size:1.5rem;margin-bottom:8px">⏳</div>
+          Building rolling history... (~10 seconds)</td></tr>`;
+      } else { renderScannerTable(d.top5); }
+    } catch(e) {
+      document.getElementById('dash-scanner-body').innerHTML=
+        `<tr><td colspan="7" style="padding:30px;text-align:center;color:var(--red)">⚠ ${e.message}</td></tr>`;
+    }
+  }
+
+  const RANK_STYLE=[
+    {bg:'#f59e0b1a',border:'#f59e0b',color:'#f59e0b'},
+    {bg:'#94a3b81a',border:'#94a3b8',color:'#94a3b8'},
+    {bg:'#cd7f321a',border:'#cd7f32',color:'#cd7f32'},
+    {bg:'#1a22351a',border:'#2a3060',color:'#4a5a80'},
+    {bg:'#1a22351a',border:'#2a3060',color:'#4a5a80'},
+  ];
+  function fmtPrice(p){if(p>=1000)return p.toFixed(2);if(p>=1)return p.toFixed(3);if(p>=0.01)return p.toFixed(4);return p.toFixed(6);}
+  function fmtVol(n){if(n>=1e9)return(n/1e9).toFixed(2)+'B';if(n>=1e6)return(n/1e6).toFixed(2)+'M';if(n>=1e3)return(n/1e3).toFixed(2)+'K';return n.toFixed(2);}
+  function scoreColor(s){return s>10?'#00e676':s>0?'#69f0ae':s>-10?'#ff5252':'#d50000';}
+  function hue(sym){return(sym.charCodeAt(0)*37+sym.charCodeAt(1)*17)%360;}
+
+  function renderScannerTable(rows){
+    document.getElementById('dash-scanner-body').innerHTML=rows.map((r,i)=>{
+      const rs=RANK_STYLE[i],sym=r.symbol.replace('USDT',''),h=hue(r.symbol),sc=scoreColor(r.score);
+      return`<tr>
+        <td><div class="rank-badge" style="background:${rs.bg};border:1.5px solid ${rs.border};color:${rs.color}">${i+1}</div></td>
+        <td><div class="coin-cell">
+          <div class="coin-avatar" style="background:hsl(${h},55%,15%);border:1.5px solid hsl(${h},55%,35%);color:hsl(${h},75%,65%)">${sym.slice(0,2)}</div>
+          <div><div class="coin-sym">${sym}</div><div class="coin-sub">USDT Perpetual</div></div>
+        </div></td>
+        <td>$${fmtPrice(r.price)}</td>
+        <td><span class="chg ${r.priceChange>=0?'up':'dn'}">${r.priceChange>=0?'▲':'▼'} ${Math.abs(r.priceChange).toFixed(2)}%</span></td>
+        <td><span style="color:${r.volumeChange>=0?'var(--green)':'var(--red)'};font-weight:600">${r.volumeChange>=0?'+':''}${r.volumeChange.toFixed(2)}%</span></td>
+        <td><span class="score-pill" style="color:${sc};border-color:${sc}44">${r.score>=0?'+':''}${r.score.toFixed(2)}</span></td>
+        <td style="color:var(--text2)">$${fmtVol(r.qVol)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  let cd=10;
+  function tickCountdown(){
+    cd--;
+    const el=document.getElementById('dash-cd');
+    if(el){el.textContent=cd;el.className='cd'+(cd<=3?' warn':'');}
+    if(cd<=0){cd=10;fetchMomentum();}
+  }
+
+  // ── Logout ────────────────────────────────────────
+  window.doLogout = async function(){
+    localStorage.removeItem('qs_session');
+    await signOut(auth);
+    window.location.href='index.html';
+  };
+
+  // ── Navigation ────────────────────────────────────
+  window.showSection = function(id) {
+    document.querySelectorAll('.dash-section').forEach(s=>s.style.display='none');
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    document.getElementById('section-'+id).style.display='block';
+    document.getElementById('nav-'+id).classList.add('active');
+  };
+</script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#07090f;--bg2:#0a0d16;--bg3:#0d1120;--card:#0f1422;--card2:#121828;
+  --border:#1a2235;--border2:#1e2a40;--accent:#00c4e8;--accent2:#6d28d9;
+  --text:#d1d9e8;--text2:#7b8db0;--text3:#3d4f6e;
+  --green:#00e676;--red:#ff4444;--yellow:#f59e0b;
+  --sidebar:220px;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter','Segoe UI',system-ui,sans-serif;overflow-x:hidden}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* LAYOUT */
+.dash-layout{display:flex;height:100vh}
+
+/* SIDEBAR */
+.sidebar{width:var(--sidebar);min-width:var(--sidebar);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:10}
+.sidebar-logo{padding:20px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.logo-mark{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;color:#fff}
+.logo-name{font-size:.95rem;font-weight:800;color:#fff}
+.logo-name span{color:var(--accent)}
+.sidebar-nav{flex:1;padding:12px 0;overflow-y:auto}
+.nav-section-label{font-size:.62rem;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3);padding:16px 18px 6px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 18px;color:var(--text2);font-size:.82rem;font-weight:500;cursor:pointer;transition:.15s;border-left:2px solid transparent}
+.nav-item:hover{background:rgba(255,255,255,.03);color:var(--text)}
+.nav-item.active{background:rgba(0,196,232,.07);color:var(--accent);border-left-color:var(--accent)}
+.nav-icon{font-size:1rem;width:20px;text-align:center}
+.nav-badge{margin-left:auto;background:var(--accent);color:#000;font-size:.6rem;font-weight:800;padding:2px 6px;border-radius:10px}
+.sidebar-user{padding:16px 18px;border-top:1px solid var(--border)}
+.user-card{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.user-initial{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent2),var(--accent));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem;color:#fff;flex-shrink:0}
+.user-info{flex:1;min-width:0}
+.user-name{font-size:.82rem;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.user-email{font-size:.68rem;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plan-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.65rem;font-weight:700;text-transform:uppercase;margin-top:4px}
+.plan-trial{background:rgba(100,116,139,.15);color:#94a3b8}
+.plan-pro{background:rgba(0,196,232,.12);color:var(--accent)}
+.plan-elite{background:rgba(109,40,217,.15);color:#a78bfa}
+.logout-btn{width:100%;padding:8px;border-radius:6px;background:transparent;border:1px solid var(--border2);color:var(--text3);font-size:.75rem;cursor:pointer;transition:.15s}
+.logout-btn:hover{border-color:var(--red);color:var(--red)}
+
+/* MAIN */
+.dash-main{margin-left:var(--sidebar);flex:1;overflow-y:auto;padding:28px}
+.dash-section{display:none}
+.dash-section.active{display:block}
+
+/* TOPBAR */
+.dash-topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.dash-topbar h1{font-size:1.2rem;font-weight:800;color:#fff}
+.dash-topbar p{font-size:.8rem;color:var(--text2);margin-top:2px}
+
+/* STATS CARDS */
+.stats-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px}
+.stat-card .label{font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.stat-card .value{font-size:1.3rem;font-weight:800;color:#fff}
+.stat-card .sub{font-size:.72rem;color:var(--text2);margin-top:3px}
+
+/* STATUS CARD */
+.status-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px}
+.status-left{display:flex;align-items:center;gap:14px}
+.status-icon{font-size:1.8rem}
+.status-title{font-size:.95rem;font-weight:700;color:#fff}
+.status-desc{font-size:.78rem;color:var(--text2);margin-top:3px}
+.upgrade-btn{padding:9px 20px;border-radius:6px;background:var(--accent);color:#000;font-size:.8rem;font-weight:700;cursor:pointer;border:none;transition:.15s}
+.upgrade-btn:hover{background:#00d8ff}
+
+/* SCANNER TABLE */
+.scanner-card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.scanner-head{background:var(--bg3);padding:12px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px}
+.scanner-head-left{display:flex;align-items:center;gap:10px}
+.live-pill{display:flex;align-items:center;gap:4px;font-size:.68rem;font-weight:700;color:var(--green);background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.2);padding:3px 9px;border-radius:4px;text-transform:uppercase}
+.live-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:blink 1.4s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.scanner-title{font-size:.85rem;font-weight:700;color:var(--text)}
+.cd{font-size:1rem;font-weight:800;color:var(--green);min-width:24px;text-align:right}
+.cd.warn{color:var(--red)}
+.scanner-meta-row{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--border)}
+.meta-cell{padding:10px 18px;border-right:1px solid var(--border)}
+.meta-cell:last-child{border-right:none}
+.meta-val{font-size:.9rem;font-weight:800;color:#fff}
+.meta-lbl{font-size:.62rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-top:1px}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+thead tr{background:var(--bg3);border-bottom:1px solid var(--border)}
+th{padding:9px 16px;text-align:right;color:var(--text3);font-size:.65rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;white-space:nowrap}
+th:first-child,th:nth-child(2){text-align:left}
+tbody tr{border-bottom:1px solid rgba(26,34,53,.5);transition:background .15s}
+tbody tr:hover{background:rgba(0,196,232,.03)}
+tbody tr:last-child{border-bottom:none}
+td{padding:12px 16px;text-align:right;white-space:nowrap;color:var(--text)}
+td:first-child,td:nth-child(2){text-align:left}
+.rank-badge{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800}
+.coin-cell{display:flex;align-items:center;gap:8px}
+.coin-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:800}
+.coin-sym{font-weight:800;font-size:.85rem;color:#fff}
+.coin-sub{font-size:.62rem;color:var(--text3)}
+.chg{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:4px;font-size:.73rem;font-weight:700;border:1px solid}
+.up{color:var(--green);background:rgba(0,230,118,.08);border-color:rgba(0,230,118,.2)}
+.dn{color:var(--red);background:rgba(255,68,68,.08);border-color:rgba(255,68,68,.2)}
+.score-pill{display:inline-flex;padding:2px 8px;border-radius:4px;font-size:.78rem;font-weight:800;border:1.5px solid;min-width:58px;justify-content:flex-end}
+.scanner-foot{background:var(--bg3);border-top:1px solid var(--border);padding:8px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px}
+.scanner-foot span{font-size:.68rem;color:var(--text3)}
+.disclaimer{font-size:.65rem;color:rgba(245,158,11,.5);background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.1);padding:2px 8px;border-radius:3px}
+
+/* GATE */
+.dash-gate{display:none;align-items:center;justify-content:center;min-height:280px}
+.gate-box{text-align:center;max-width:380px;padding:20px}
+.gate-icon{font-size:2.5rem;margin-bottom:14px}
+.gate-box h3{font-size:1rem;font-weight:800;color:#fff;margin-bottom:8px}
+.gate-box p{font-size:.82rem;color:var(--text2);line-height:1.6;margin-bottom:20px}
+.btn-primary{background:var(--accent);color:#000;font-weight:700;padding:10px 22px;border-radius:6px;border:none;cursor:pointer;font-size:.85rem;transition:.15s}
+.btn-primary:hover{background:#00d8ff}
+
+/* COMING SOON */
+.coming-soon{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:60px 40px;text-align:center}
+.coming-soon .cs-icon{font-size:2.5rem;margin-bottom:16px}
+.coming-soon h3{font-size:1.05rem;font-weight:800;color:#fff;margin-bottom:8px}
+.coming-soon p{font-size:.85rem;color:var(--text2);line-height:1.65;max-width:420px;margin:0 auto}
+.coming-tag{display:inline-block;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);color:var(--yellow);font-size:.68rem;font-weight:700;padding:3px 10px;border-radius:4px;margin-bottom:14px;text-transform:uppercase;letter-spacing:.5px}
+
+/* MENTORSHIP CONTENT */
+.mentor-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.mentor-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:22px}
+.mentor-card h4{font-size:.9rem;font-weight:700;color:#fff;margin-bottom:6px}
+.mentor-card p{font-size:.8rem;color:var(--text2);line-height:1.6;margin-bottom:14px}
+.mentor-card .tag{display:inline-block;font-size:.65rem;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase}
+.tag-live{background:rgba(0,230,118,.1);color:var(--green);border:1px solid rgba(0,230,118,.2)}
+.tag-soon{background:rgba(245,158,11,.1);color:var(--yellow);border:1px solid rgba(245,158,11,.2)}
+.tag-recorded{background:rgba(0,196,232,.1);color:var(--accent);border:1px solid rgba(0,196,232,.2)}
+
+/* PROFILE */
+.profile-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:28px;max-width:500px}
+.profile-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid rgba(26,34,53,.5);font-size:.85rem}
+.profile-row:last-child{border:none}
+.profile-row .label{color:var(--text3);font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+.profile-row .val{color:var(--text);font-weight:600}
+
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%)}
+  .dash-main{margin-left:0}
+  .stats-cards{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="dash-layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark">QΣ</div>
+      <span class="logo-name">Quant<span>Sigma</span></span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Main</div>
+      <div class="nav-item active" id="nav-overview" onclick="showSection('overview')">
+        <span class="nav-icon">🏠</span> Overview
+      </div>
+      <div class="nav-item" id="nav-scanner" onclick="showSection('scanner')">
+        <span class="nav-icon">📡</span> Crypto Scanner
+        <span class="nav-badge">Live</span>
+      </div>
+
+      <div class="nav-section-label">Coming Soon</div>
+      <div class="nav-item" id="nav-equity" onclick="showSection('equity')">
+        <span class="nav-icon">📈</span> NSE/BSE Scanner
+      </div>
+      <div class="nav-item" id="nav-strategies" onclick="showSection('strategies')">
+        <span class="nav-icon">🧠</span> Strategies
+      </div>
+
+      <div class="nav-section-label">Learn</div>
+      <div class="nav-item" id="nav-mentorship" onclick="showSection('mentorship')">
+        <span class="nav-icon">🎓</span> Mentorship
+      </div>
+
+      <div class="nav-section-label">Account</div>
+      <div class="nav-item" id="nav-subscription" onclick="showSection('subscription')">
+        <span class="nav-icon">💳</span> Subscription
+      </div>
+      <div class="nav-item" id="nav-profile" onclick="showSection('profile')">
+        <span class="nav-icon">👤</span> Profile
+      </div>
+    </nav>
+
+    <div class="sidebar-user">
+      <div class="user-card">
+        <div class="user-initial" id="user-initial">U</div>
+        <div class="user-info">
+          <div class="user-name" id="user-name">Loading...</div>
+          <div class="user-email" id="user-email"></div>
+          <span class="plan-badge plan-trial" id="user-plan">Trial</span>
+        </div>
+      </div>
+      <button class="logout-btn" onclick="doLogout()">← Log Out</button>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="dash-main">
+
+    <!-- ── OVERVIEW ── -->
+    <div class="dash-section" id="section-overview" style="display:block">
+      <div class="dash-topbar">
+        <div>
+          <h1>Good morning, <span id="user-name-top">Trader</span> 👋</h1>
+          <p>Here's your QuantSigma dashboard overview</p>
+        </div>
+        <button class="btn-primary" onclick="showSection('scanner')">Open Scanner →</button>
+      </div>
+
+      <!-- Status card -->
+      <div class="status-card">
+        <div class="status-left">
+          <div class="status-icon" id="status-icon">⏳</div>
+          <div>
+            <div class="status-title" id="status-title">Checking status...</div>
+            <div class="status-desc"  id="status-desc">Please wait</div>
+          </div>
+        </div>
+        <button class="upgrade-btn" id="upgrade-btn"
+          onclick="window.location.href='index.html#pricing'">Upgrade to Pro</button>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-cards">
+        <div class="stat-card">
+          <div class="label">Current Plan</div>
+          <div class="value" id="stat-plan">—</div>
+          <div class="sub">quantsigma.in</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Member Since</div>
+          <div class="value" id="stat-joined">—</div>
+          <div class="sub">Account created</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Pairs Scanned</div>
+          <div class="value">500+</div>
+          <div class="sub">Binance Futures</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Scanner Refresh</div>
+          <div class="value">10s</div>
+          <div class="sub">Rolling 5-min window</div>
+        </div>
+      </div>
+
+      <!-- Quick actions -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px">
+        <div class="stat-card" style="cursor:pointer;transition:.2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'" onclick="showSection('scanner')">
+          <div style="font-size:1.4rem;margin-bottom:8px">📡</div>
+          <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">Crypto Scanner</div>
+          <div style="font-size:.75rem;color:var(--text2)">Live momentum scanner → open now</div>
+        </div>
+        <div class="stat-card" style="cursor:pointer;transition:.2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'" onclick="showSection('mentorship')">
+          <div style="font-size:1.4rem;margin-bottom:8px">🎓</div>
+          <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">Mentorship</div>
+          <div style="font-size:.75rem;color:var(--text2)">Programs, sessions, curriculum</div>
+        </div>
+        <div class="stat-card" style="cursor:pointer;transition:.2s" onmouseover="this.style.borderColor='var(--yellow)'" onmouseout="this.style.borderColor='var(--border)'" onclick="showSection('equity')">
+          <div style="font-size:1.4rem;margin-bottom:8px">📈</div>
+          <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">NSE/BSE Scanner</div>
+          <div style="font-size:.75rem;color:var(--yellow)">Coming soon</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CRYPTO SCANNER ── -->
+    <div class="dash-section" id="section-scanner">
+      <div class="dash-topbar">
+        <div>
+          <h1>📡 Crypto Futures Scanner</h1>
+          <p>Binance USDT-M Perpetuals · Real-time momentum · Crypto only</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--text2)">
+          Refreshes in <span class="cd" id="dash-cd">10</span>s
+        </div>
+      </div>
+
+      <div class="scanner-card">
+        <div class="scanner-head">
+          <div class="scanner-head-left">
+            <div class="live-pill"><span class="live-dot"></span>Live</div>
+            <span class="scanner-title">Top 5 Momentum — USDT Perpetuals</span>
+          </div>
+          <span style="font-size:.7rem;color:var(--text3)" id="dash-ts">Awaiting...</span>
+        </div>
+        <div class="scanner-meta-row">
+          <div class="meta-cell"><div class="meta-val" id="dash-total">—</div><div class="meta-lbl">Pairs Scanned</div></div>
+          <div class="meta-cell"><div class="meta-val">Binance Futures</div><div class="meta-lbl">Exchange</div></div>
+          <div class="meta-cell"><div class="meta-val">5 Min Rolling</div><div class="meta-lbl">Window</div></div>
+        </div>
+
+        <!-- Gate for expired users -->
+        <div class="dash-gate" id="dash-scanner-gate">
+          <div class="gate-box">
+            <div class="gate-icon">⏰</div>
+            <h3>Your trial has expired</h3>
+            <p>Upgrade to Pro to continue accessing the live momentum scanner and all future tools.</p>
+            <button class="btn-primary" onclick="window.location.href='index.html#pricing'">View Plans — from ₹1,499/mo</button>
+          </div>
+        </div>
+
+        <!-- Scanner content -->
+        <div id="dash-scanner-content">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:40px">#</th>
+                  <th>Symbol</th>
+                  <th>Price (USDT)</th>
+                  <th>Price Δ 5m</th>
+                  <th>Vol Δ 5m</th>
+                  <th>Score</th>
+                  <th>Quote Vol</th>
+                </tr>
+              </thead>
+              <tbody id="dash-scanner-body">
+                <tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text2)">
+                  <div style="font-size:1.5rem;margin-bottom:8px">⏳</div>
+                  Connecting to scanner...
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="scanner-foot">
+            <span id="dash-last-ts">Awaiting first fetch...</span>
+            <span class="disclaimer">⚠ For informational purposes only. Not financial advice.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── NSE/BSE SCANNER ── -->
+    <div class="dash-section" id="section-equity">
+      <div class="dash-topbar"><div><h1>📈 NSE/BSE Scanner</h1><p>Indian equity momentum scanner</p></div></div>
+      <div class="coming-soon">
+        <div class="coming-tag">Coming Soon</div>
+        <div class="cs-icon">📈</div>
+        <h3>NSE/BSE Equity Scanner</h3>
+        <p>Real-time momentum scanner for Indian equities across NSE and BSE. Volume spikes, breakout detection, and sector filters. Currently in development.</p>
+      </div>
+    </div>
+
+    <!-- ── STRATEGIES ── -->
+    <div class="dash-section" id="section-strategies">
+      <div class="dash-topbar"><div><h1>🧠 Strategies</h1><p>Quantitative trading strategies and research</p></div></div>
+      <div class="coming-soon">
+        <div class="coming-tag">Coming Soon</div>
+        <div class="cs-icon">🧠</div>
+        <h3>Strategy Library</h3>
+        <p>Curated quantitative trading strategies with backtested performance metrics. Momentum, mean-reversion, and breakout systems. Coming in the next update.</p>
+      </div>
+    </div>
+
+    <!-- ── MENTORSHIP ── -->
+    <div class="dash-section" id="section-mentorship">
+      <div class="dash-topbar"><div><h1>🎓 Mentorship</h1><p>Programs, live sessions, and learning resources</p></div></div>
+      <div class="mentor-cards">
+        <div class="mentor-card">
+          <span class="tag tag-live">● Live</span>
+          <h4 style="margin-top:10px">Next Cohort — April 2026</h4>
+          <p>Applications are open for the April 2026 cohort. Limited to 15 seats. Structured 6-week program.</p>
+          <button class="btn-primary" style="font-size:.78rem;padding:8px 16px" onclick="window.location.href='index.html#mentorship'">Apply Now</button>
+        </div>
+        <div class="mentor-card">
+          <span class="tag tag-recorded">Curriculum</span>
+          <h4 style="margin-top:10px">Program Overview</h4>
+          <p>Market microstructure, strategy design, Python automation, and live session reviews. 4 modules over 6 weeks.</p>
+          <button class="btn-primary" style="font-size:.78rem;padding:8px 16px;background:var(--bg3);color:var(--text2);border:1px solid var(--border2)" onclick="window.location.href='index.html#mentorship'">View Curriculum</button>
+        </div>
+        <div class="mentor-card">
+          <span class="tag tag-soon">Coming Soon</span>
+          <h4 style="margin-top:10px">Recorded Sessions</h4>
+          <p>Past live session recordings will be available here for Elite subscribers to replay on demand.</p>
+        </div>
+        <div class="mentor-card">
+          <span class="tag tag-soon">Coming Soon</span>
+          <h4 style="margin-top:10px">Strategy Reviews</h4>
+          <p>Submit your strategy for a detailed code and logic review. Available to Elite plan members.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SUBSCRIPTION ── -->
+    <div class="dash-section" id="section-subscription">
+      <div class="dash-topbar"><div><h1>💳 Subscription</h1><p>Your current plan and billing</p></div></div>
+      <div class="status-card" style="margin-bottom:20px">
+        <div class="status-left">
+          <div class="status-icon" id="status-icon2">⏳</div>
+          <div>
+            <div class="status-title" id="status-title2">Loading...</div>
+            <div class="status-desc"  id="status-desc2">Please wait</div>
+          </div>
+        </div>
+        <button class="upgrade-btn" onclick="window.location.href='index.html#pricing'">Upgrade Plan</button>
+      </div>
+      <div class="stats-cards">
+        <div class="stat-card">
+          <div class="label">Plan</div>
+          <div class="value" id="sub-plan">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Status</div>
+          <div class="value" id="sub-status">—</div>
+        </div>
+      </div>
+      <div style="margin-top:16px;padding:16px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:.8rem;color:var(--text2)">
+        For billing support or cancellations, contact us at <a href="mailto:hello@quantsigma.in" style="color:var(--accent)">hello@quantsigma.in</a>
+      </div>
+    </div>
+
+    <!-- ── PROFILE ── -->
+    <div class="dash-section" id="section-profile">
+      <div class="dash-topbar"><div><h1>👤 Profile</h1><p>Your account details</p></div></div>
+      <div class="profile-card">
+        <div class="profile-row">
+          <span class="label">Name</span>
+          <span class="val" id="prof-name">—</span>
+        </div>
+        <div class="profile-row">
+          <span class="label">Email</span>
+          <span class="val" id="prof-email">—</span>
+        </div>
+        <div class="profile-row">
+          <span class="label">Plan</span>
+          <span class="val" id="prof-plan">—</span>
+        </div>
+        <div class="profile-row">
+          <span class="label">Member Since</span>
+          <span class="val" id="prof-joined">—</span>
+        </div>
+        <div class="profile-row">
+          <span class="label">Email Verified</span>
+          <span class="val" style="color:var(--green)">✓ Verified</span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// Populate profile and subscription sections when data loads
+function renderUserInfo(user, data) {
+  const name  = data.name || user.email.split('@')[0];
+  const plan  = data.plan || 'trial';
+  const trialEnd = data.trialEnd?.toDate?.() || new Date(data.trialEnd);
+  const subEnd   = data.subscriptionEnd?.toDate?.() || null;
+  const now      = new Date();
+
+  // Overview greeting
+  const nameTop = document.getElementById('user-name-top');
+  if (nameTop) nameTop.textContent = name;
+
+  // Profile section
+  const pn = document.getElementById('prof-name');
+  const pe = document.getElementById('prof-email');
+  const pp = document.getElementById('prof-plan');
+  const pj = document.getElementById('prof-joined');
+  if(pn) pn.textContent = name;
+  if(pe) pe.textContent = user.email;
+  if(pp) pp.textContent = plan.charAt(0).toUpperCase()+plan.slice(1);
+  if(pj) pj.textContent = data.createdAt?.toDate?.()?.toLocaleDateString()||'—';
+
+  // Subscription section
+  const sp = document.getElementById('sub-plan');
+  const ss = document.getElementById('sub-status');
+  if(sp) sp.textContent = plan.charAt(0).toUpperCase()+plan.slice(1);
+
+  // Status cards (overview + subscription)
+  ['','2'].forEach(suffix => {
+    const si = document.getElementById('status-icon'+suffix);
+    const st = document.getElementById('status-title'+suffix);
+    const sd = document.getElementById('status-desc'+suffix);
+    if (!st) return;
+    if (plan==='pro'||plan==='elite') {
+      const daysLeft = subEnd ? Math.ceil((subEnd-now)/864e5) : '—';
+      if(si) si.textContent='✅';
+      st.textContent = plan==='pro'?'Pro Plan Active':'Elite Plan Active';
+      sd.textContent = `${daysLeft} days remaining`;
+      if(ss) ss.textContent='Active';
+      const ub = document.getElementById('upgrade-btn');
+      if(ub) ub.style.display='none';
+    } else {
+      const hoursLeft = trialEnd>now ? Math.ceil((trialEnd-now)/36e5) : 0;
+      if(hoursLeft>0) {
+        if(si) si.textContent='⏳';
+        st.textContent='Free Trial Active';
+        sd.textContent=`${hoursLeft} hours remaining`;
+        if(ss) ss.textContent='Trial';
+      } else {
+        if(si) si.textContent='⏰';
+        st.textContent='Trial Expired';
+        sd.textContent='Upgrade to continue';
+        if(ss) ss.textContent='Expired';
+      }
+    }
+  });
+}
+
+// Show section helper (also used by module script)
+window.showSection = function(id) {
+  document.querySelectorAll('.dash-section').forEach(s=>s.style.display='none');
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const sec = document.getElementById('section-'+id);
+  const nav = document.getElementById('nav-'+id);
+  if(sec) sec.style.display='block';
+  if(nav) nav.classList.add('active');
+};
+
+// Override renderUserInfo from module
+window._renderUserInfo = renderUserInfo;
+</script>
+</body>
+</html>
