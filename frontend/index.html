@@ -247,15 +247,31 @@
 
   // ── Resend verification email ─────────────────────
   window.resendVerification = async function() {
+    const email = document.getElementById('li-email').value.trim() || window._unverifiedEmail;
+    const pass  = document.getElementById('li-pass').value;
+
+    if (!email) {
+      showToast('Please enter your email first.');
+      return;
+    }
+
     try {
-      if (auth.currentUser) {
-        await sendEmailVerification(auth.currentUser);
-        showToast('Verification email sent! Check your inbox.');
-      } else if (window._unverifiedEmail) {
-        showToast('Please log in again to resend verification.');
+      // Sign in silently to get user object then send verification
+      if (pass) {
+        const cred = await signInWithEmailAndPassword(auth, email, pass);
+        await sendEmailVerification(cred.user);
+        await signOut(auth);
+        showToast('✅ Verification email sent! Check your inbox or spam folder.');
+      } else {
+        showToast('Please enter your password below then click Resend.');
       }
     } catch(e) {
-      showToast('Failed to send. Try again in a few minutes.');
+      const msgs = {
+        'auth/wrong-password':     'Incorrect password. Cannot resend.',
+        'auth/invalid-credential': 'Incorrect email or password.',
+        'auth/too-many-requests':  'Too many attempts. Please wait a few minutes.'
+      };
+      showToast(msgs[e.code] || 'Failed to send. Try again in a few minutes.');
     }
   };
 
@@ -1026,7 +1042,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         <span class="forgot-link" onclick="showForgotPassword()">Forgot password?</span>
         <button class="modal-submit" id="li-btn" onclick="doLogin()">Log In</button>
         <div class="resend-link" id="resend-verify" onclick="resendVerification()">
-          Didn't get verification email? Resend it →
+          📧 Didn't get verification email? Enter your password above and click here to resend →
         </div>
       </div>
     </div>
