@@ -1,0 +1,15 @@
+{
+  "cleanUrls": true
+}
+```
+4. Click **"Commit changes"**
+
+---
+
+That's it. `cleanUrls: true` tells Vercel to serve `.html` files without needing the extension, so:
+- `quantsigma.in/auth-action` → serves `auth-action.html` ✅
+- `quantsigma.in/dashboard` → serves `dashboard.html` ✅
+
+Then update Firebase Action URL to:
+```
+https://www.quantsigma.in/auth-action
