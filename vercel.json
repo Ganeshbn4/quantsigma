@@ -1,0 +1,24 @@
+{
+  "rewrites": [
+    { "source": "/dashboard", "destination": "/dashboard.html" },
+    { "source": "/auth-action", "destination": "/auth-action.html" }
+  ]
+}
+```
+
+Click **"Commit changes"**
+
+---
+
+## Also Update Firebase Action URL
+
+Since we need clean URLs, update Firebase Action URL to:
+```
+https://www.quantsigma.in/auth-action.html
+```
+
+Wait — actually the issue is simpler. Vercel root directory is set to `frontend/` so `auth-action.html` should be at `quantsigma.in/auth-action.html` directly.
+
+**Test this URL on your phone right now:**
+```
+https://www.quantsigma.in/auth-action.html
