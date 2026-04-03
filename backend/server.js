@@ -1,9 +1,9 @@
 // ============================================================
-//  QuantSigma — Crypto Futures Momentum Scanner
-//  Stack  : Node.js + Express + Axios
-//  Deploy : Railway
-//  Logic  : Rolling 5-min history window
-//  Score  : PriceChange × 0.6 + VolumeChange × 0.4
+//  QuantSigma — Scanner Server v5
+//  Scanner 1: Crypto Futures (Binance USDT-M Perpetuals)
+//  Scanner 2: Indian FNO Stocks (NSE)
+//  Formula  : Score = PriceChange × 0.6 + VolumeChange × 0.4
+//  Rolling  : 5-min window (same logic as crypto)
 // ============================================================
 
 const express = require("express");
@@ -13,26 +13,28 @@ const cors    = require("cors");
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// ── Allow requests from your frontend domain ──────────────
+// ── CORS ──────────────────────────────────────────────────
 app.use(cors({
   origin: [
     "https://quantsigma.in",
     "https://www.quantsigma.in",
-    "http://localhost:3000"   // for local testing
+    "http://localhost:3000",
+    /\.vercel\.app$/
   ]
 }));
 
-const BAPI    = "https://fapi.binance.com";
-const WINDOW  = 300;   // 5-minute rolling window (seconds)
-const REFRESH = 10;    // fetch new data every 10 seconds
+// ══════════════════════════════════════════════════════════
+//  SCANNER 1 — CRYPTO FUTURES (Binance)
+// ══════════════════════════════════════════════════════════
+const BAPI        = "https://fapi.binance.com";
+const WINDOW      = 300;  // 5-min rolling window (seconds)
+const REFRESH     = 10;   // poll every 10 seconds
 
-// ── In-memory rolling history ─────────────────────────────
-// Structure: { symbol: [ [timestamp, price, volume], ... ] }
-const history = {};
-
-// ── Whitelist: crypto-only USDT perpetuals ────────────────
-// This excludes equity derivatives like NVDA, META, GOOGL
-let cryptoSymbols = new Set();
+const cryptoHistory = {}; // { symbol: [[ts, price, vol], ...] }
+let cryptoSymbols   = new Set();
+let cryptoResults   = [];
+let cryptoTotal     = 0;
+let cryptoLastFetch = null;
 
 async function loadCryptoSymbols() {
   try {
@@ -40,150 +42,252 @@ async function loadCryptoSymbols() {
     cryptoSymbols = new Set(
       data.symbols
         .filter(s =>
-          s.underlyingType === "COIN"      &&  // crypto only
-          s.contractType   === "PERPETUAL" &&  // perpetuals only
-          s.status         === "TRADING"   &&  // active markets only
-          s.symbol.endsWith("USDT")            // USDT-margined only
+          s.underlyingType === "COIN"      &&
+          s.contractType   === "PERPETUAL" &&
+          s.status         === "TRADING"   &&
+          s.symbol.endsWith("USDT")
         )
         .map(s => s.symbol)
     );
-    console.log(`✅  Loaded ${cryptoSymbols.size} crypto USDT perpetual symbols`);
-  } catch (e) {
-    console.error("Failed to load symbols:", e.message);
+    console.log(`✅ Crypto: Loaded ${cryptoSymbols.size} USDT perpetual symbols`);
+  } catch(e) {
+    console.error("Crypto symbol load error:", e.message);
   }
 }
 
-// ── Fetch latest ticker snapshot from Binance ─────────────
-async function getSnapshot() {
-  const { data } = await axios.get(`${BAPI}/fapi/v1/ticker/24hr`, { timeout: 10000 });
-  const snapshot = {};
-  for (const coin of data) {
-    try {
-      const symbol = coin.symbol;
-      if (!cryptoSymbols.has(symbol)) continue;
-      const price  = parseFloat(coin.lastPrice);
-      const volume = parseFloat(coin.quoteVolume);
-      if (price && volume) snapshot[symbol] = [price, volume];
-    } catch (_) {}
-  }
-  return snapshot;
-}
-
-// ── Core scoring loop — runs every 10 seconds ─────────────
-let latestResults = [];
-let lastFetch     = null;
-let totalCoins    = 0;
-
-async function tick() {
+async function tickCrypto() {
   try {
-    const now     = Date.now() / 1000; // unix timestamp in seconds
-    const current = await getSnapshot();
+    const now = Date.now() / 1000;
+    const { data } = await axios.get(`${BAPI}/fapi/v1/ticker/24hr`, { timeout: 10000 });
 
-    totalCoins = Object.keys(current).length;
-
-    // Add new snapshot to rolling history, remove entries older than WINDOW
-    for (const [symbol, [price, vol]] of Object.entries(current)) {
-      if (!history[symbol]) history[symbol] = [];
-      history[symbol].push([now, price, vol]);
-      history[symbol] = history[symbol].filter(x => now - x[0] < WINDOW);
+    cryptoTotal = 0;
+    for (const coin of data) {
+      if (!cryptoSymbols.has(coin.symbol)) continue;
+      const price = parseFloat(coin.lastPrice);
+      const vol   = parseFloat(coin.quoteVolume);
+      if (!price || !vol) continue;
+      cryptoTotal++;
+      if (!cryptoHistory[coin.symbol]) cryptoHistory[coin.symbol] = [];
+      cryptoHistory[coin.symbol].push([now, price, vol]);
+      cryptoHistory[coin.symbol] = cryptoHistory[coin.symbol].filter(x => now - x[0] < WINDOW);
     }
 
-    // Score every symbol that has at least 2 data points in the window
     const results = [];
-    for (const symbol of Object.keys(history)) {
-      const h = history[symbol];
+    for (const symbol of Object.keys(cryptoHistory)) {
+      const h = cryptoHistory[symbol];
+      if (h.length < 2) continue;
+      const [, oldP, oldV] = h[0];
+      const [, newP, newV] = h[h.length - 1];
+      if (!oldP || !oldV) continue;
+      const pc    = ((newP - oldP) / oldP) * 100;
+      const vc    = ((newV - oldV) / oldV) * 100;
+      const score = (pc * 0.6) + (vc * 0.4);
+      results.push({ symbol, price: newP, priceChange: pc, volumeChange: vc, score, qVol: newV });
+    }
+
+    cryptoResults   = results.sort((a, b) => b.score - a.score).slice(0, 5);
+    cryptoLastFetch = Date.now();
+
+    console.log("\n🔥 CRYPTO TOP 5:");
+    for (const r of cryptoResults) {
+      console.log(`  ${r.symbol.padEnd(14)} Price: ${r.priceChange.toFixed(2).padStart(7)}% | Vol: ${r.volumeChange.toFixed(2).padStart(9)}% | Score: ${r.score.toFixed(2)}`);
+    }
+  } catch(e) {
+    console.error("Crypto tick error:", e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  SCANNER 2 — INDIAN FNO STOCKS (NSE)
+//  Uses NSE's public JSON endpoint — no API key needed
+//  Same rolling 5-min window formula as crypto
+// ══════════════════════════════════════════════════════════
+const NSE_URL = "https://www.nseindia.com/api/equity-stockIndices?index=SECURITIES%20IN%20F%26O";
+
+// NSE requires browser-like headers to avoid blocking
+const NSE_HEADERS = {
+  "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept":          "application/json, text/plain, */*",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Referer":         "https://www.nseindia.com/market-data/securities-available-for-trading",
+  "Connection":      "keep-alive",
+  "Cache-Control":   "no-cache",
+  "Pragma":          "no-cache",
+};
+
+// NSE requires a session cookie — we get it by hitting the homepage first
+let nseCookies     = "";
+let nseHistory     = {}; // { symbol: [[ts, price, vol], ...] }
+let nseResults     = [];
+let nseTotal       = 0;
+let nseLastFetch   = null;
+let nseReady       = false;
+
+// Get NSE session cookies (required to access API)
+async function getNSECookies() {
+  try {
+    const resp = await axios.get("https://www.nseindia.com", {
+      headers:  NSE_HEADERS,
+      timeout:  15000,
+      maxRedirects: 5
+    });
+    const rawCookies = resp.headers["set-cookie"];
+    if (rawCookies) {
+      nseCookies = rawCookies.map(c => c.split(";")[0]).join("; ");
+      console.log("✅ NSE: Session cookies obtained");
+    }
+  } catch(e) {
+    console.error("NSE cookie error:", e.message);
+  }
+}
+
+async function tickNSE() {
+  try {
+    // Refresh cookies if empty
+    if (!nseCookies) await getNSECookies();
+
+    const { data } = await axios.get(NSE_URL, {
+      headers: { ...NSE_HEADERS, "Cookie": nseCookies },
+      timeout: 15000
+    });
+
+    if (!data || !data.data) {
+      console.error("NSE: Invalid response format");
+      return;
+    }
+
+    const now    = Date.now() / 1000;
+    nseTotal     = 0;
+
+    for (const stock of data.data) {
+      try {
+        // Skip index rows (NIFTY, BANKNIFTY etc)
+        if (!stock.symbol || stock.symbol.startsWith("NIFTY") || stock.symbol.startsWith("SENSEX")) continue;
+
+        const symbol = stock.symbol;
+        const price  = parseFloat(stock.lastPrice?.toString().replace(/,/g, "") || 0);
+        const vol    = parseFloat(stock.totalTradedVolume?.toString().replace(/,/g, "") || 0);
+
+        if (!price || !vol) continue;
+        nseTotal++;
+
+        if (!nseHistory[symbol]) nseHistory[symbol] = [];
+        nseHistory[symbol].push([now, price, vol]);
+        nseHistory[symbol] = nseHistory[symbol].filter(x => now - x[0] < WINDOW);
+      } catch(_) {}
+    }
+
+    // Need at least 2 snapshots to calculate momentum
+    const results = [];
+    for (const symbol of Object.keys(nseHistory)) {
+      const h = nseHistory[symbol];
       if (h.length < 2) continue;
 
-      const [, oldPrice, oldVol] = h[0];            // oldest entry
-      const [, newPrice, newVol] = h[h.length - 1]; // latest entry
+      const [, oldP, oldV] = h[0];
+      const [, newP, newV] = h[h.length - 1];
+      if (!oldP || !oldV) continue;
 
-      if (oldPrice === 0 || oldVol === 0) continue;
-
-      const priceChange  = ((newPrice - oldPrice) / oldPrice) * 100;
-      const volumeChange = ((newVol   - oldVol)   / oldVol)   * 100;
-
-      // Scoring formula: Price momentum weighted 60%, Volume momentum 40%
-      const score = (priceChange * 0.6) + (volumeChange * 0.4);
+      const pc    = ((newP - oldP) / oldP) * 100;
+      const vc    = ((newV - oldV) / oldV) * 100;
+      const score = (pc * 0.6) + (vc * 0.4);
 
       results.push({
         symbol,
-        price: newPrice,
-        priceChange,
-        volumeChange,
+        price:         newP,
+        priceChange:   pc,
+        volumeChange:  vc,
         score,
-        qVol: newVol
+        totalVolume:   newV
       });
     }
 
-    // Sort by score descending, keep top 5
-    latestResults = results
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 5);
+    nseResults   = results.sort((a, b) => b.score - a.score).slice(0, 5);
+    nseLastFetch = Date.now();
+    nseReady     = results.length > 0;
 
-    lastFetch = Date.now();
-
-    // Log to Railway console
-    console.log("\n🔥 TOP 5 STRONGEST — " + new Date().toLocaleTimeString());
-    for (const r of latestResults) {
-      console.log(
-        `${r.symbol.padEnd(12)} | Price: ${r.priceChange.toFixed(2).padStart(7)}% | ` +
-        `Vol: ${r.volumeChange.toFixed(2).padStart(9)}% | Score: ${r.score.toFixed(2).padStart(8)}`
-      );
+    console.log(`\n📈 NSE FNO TOP 5 (${nseTotal} stocks scanned):`);
+    for (const r of nseResults) {
+      console.log(`  ${r.symbol.padEnd(14)} Price: ${r.priceChange.toFixed(2).padStart(7)}% | Vol: ${r.volumeChange.toFixed(2).padStart(9)}% | Score: ${r.score.toFixed(2)}`);
     }
 
-  } catch (e) {
-    console.error("Tick error:", e.message);
+  } catch(e) {
+    console.error("NSE tick error:", e.message);
+    // If request fails, refresh cookies and retry next tick
+    nseCookies = "";
   }
 }
 
-// ── API Routes ────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════
+//  API ROUTES
+// ══════════════════════════════════════════════════════════
 
-// Main endpoint — frontend calls this every 10 seconds
+// Crypto scanner endpoint
 app.get("/api/momentum", (req, res) => {
   res.json({
-    ok:     true,
-    total:  totalCoins,
-    top5:   latestResults,
-    ts:     lastFetch
+    ok:    true,
+    total: cryptoTotal,
+    top5:  cryptoResults,
+    ts:    cryptoLastFetch
   });
 });
 
-// Health check — Railway uses this to confirm server is alive
+// NSE FNO scanner endpoint
+app.get("/api/nse", (req, res) => {
+  res.json({
+    ok:    true,
+    total: nseTotal,
+    top5:  nseResults,
+    ready: nseReady,
+    ts:    nseLastFetch
+  });
+});
+
+// Health check
 app.get("/health", (req, res) => {
   res.json({ status: "ok", uptime: process.uptime() });
 });
 
-// Root route
+// Root
 app.get("/", (req, res) => {
   res.json({
-    name:    "QuantSigma Scanner API",
-    version: "1.0.0",
-    status:  "running",
-    endpoint: "/api/momentum"
+    name:      "QuantSigma Scanner API v5",
+    endpoints: ["/api/momentum", "/api/nse", "/health"]
   });
 });
 
-// ── Start Server ──────────────────────────────────────────
+// ══════════════════════════════════════════════════════════
+//  START SERVER
+// ══════════════════════════════════════════════════════════
 (async () => {
   try {
-    // Load crypto symbol whitelist first
+    console.log("\n🚀 QuantSigma Scanner v5 starting...\n");
+
+    // ── Crypto: load symbols then start polling ──────────
     await loadCryptoSymbols();
+    await tickCrypto();
+    setInterval(tickCrypto, REFRESH * 1000);
+    setInterval(loadCryptoSymbols, 6 * 60 * 60 * 1000); // refresh every 6h
 
-    // Run first tick immediately, then every 10 seconds
-    await tick();
-    setInterval(tick, REFRESH * 1000);
+    // ── NSE: get cookies then start polling ──────────────
+    // Small delay so both scanners don't hammer on startup
+    setTimeout(async () => {
+      await getNSECookies();
+      await tickNSE();
+      setInterval(tickNSE, REFRESH * 1000);
+      // Refresh NSE cookies every 30 minutes
+      setInterval(getNSECookies, 30 * 60 * 1000);
+    }, 3000);
 
-    // Refresh symbol whitelist every 6 hours
-    setInterval(loadCryptoSymbols, 6 * 60 * 60 * 1000);
-
-  } catch (e) {
+  } catch(e) {
     console.error("Startup error:", e.message);
     process.exit(1);
   }
 })();
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`\n✅  QuantSigma Scanner running on port ${PORT}`);
-  console.log(`📡  API → http://0.0.0.0:${PORT}/api/momentum`);
-  console.log(`⏳  Warming up... scores appear after first 2 snapshots (~10s)\n`);
+  console.log(`\n✅ Server running on port ${PORT}`);
+  console.log(`📡 Crypto API  → /api/momentum`);
+  console.log(`📈 NSE FNO API → /api/nse`);
+  console.log(`⏳ NSE scores appear after first 2 snapshots (~10 seconds)\n`);
 });
