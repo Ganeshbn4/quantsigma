@@ -28,22 +28,19 @@
 
   let currentUser    = null;
   let currentUserDoc = null;
-  let currentUserRef = null;
 
   // ── Auth guard ────────────────────────────────────────
   onAuthStateChanged(auth, async user => {
-    if (!user)                { window.location.href = 'index.html'; return; }
-    if (!user.emailVerified)  { window.location.href = 'index.html'; return; }
-
+    if (!user)               { window.location.href = 'index.html'; return; }
+    if (!user.emailVerified) { window.location.href = 'index.html'; return; }
     currentUser = user;
 
     try {
       const snap = await getDocs(query(collection(db,'users'), where('uid','==',user.uid)));
       if (!snap.empty) {
         currentUserDoc = snap.docs[0].data();
-        currentUserRef = snap.docs[0].ref;
 
-        // Session restriction check
+        // Session restriction
         const mySession     = localStorage.getItem('qs_session');
         const storedSession = currentUserDoc.sessionToken;
         if (storedSession && mySession && storedSession !== mySession) {
@@ -60,11 +57,10 @@
       } else {
         window.location.href = 'index.html';
       }
-    } catch(e) {
-      console.error(e);
-    }
+    } catch(e) { console.error(e); }
   });
 
+  // ── Render user info ──────────────────────────────────
   function renderUserInfo(user, data) {
     const name     = data.name || user.email.split('@')[0];
     const plan     = data.plan || 'trial';
@@ -72,30 +68,30 @@
     const subEnd   = data.subscriptionEnd?.toDate?.() || null;
     const now      = new Date();
 
-    // Sidebar user info
-    const ui = document.getElementById('user-initial');
-    const un = document.getElementById('user-name');
-    const ue = document.getElementById('user-email');
-    const up = document.getElementById('user-plan');
+    // Sidebar
+    const ui=document.getElementById('user-initial');
+    const un=document.getElementById('user-name');
+    const ue=document.getElementById('user-email');
+    const up=document.getElementById('user-plan');
     if(ui) ui.textContent = name.charAt(0).toUpperCase();
     if(un) un.textContent = name;
     if(ue) ue.textContent = user.email;
     if(up) {
-      if(plan==='pro')        { up.textContent='Pro';         up.className='plan-badge plan-pro'; }
-      else if(plan==='elite') { up.textContent='Elite';       up.className='plan-badge plan-elite'; }
-      else                    { up.textContent='Free Trial';  up.className='plan-badge plan-trial'; }
+      if(plan==='pro')        { up.textContent='Pro';        up.className='plan-badge plan-pro'; }
+      else if(plan==='elite') { up.textContent='Elite';      up.className='plan-badge plan-elite'; }
+      else                    { up.textContent='Free Trial'; up.className='plan-badge plan-trial'; }
     }
 
     // Overview greeting
-    const nt = document.getElementById('user-name-top');
+    const nt=document.getElementById('user-name-top');
     if(nt) nt.textContent = name;
 
-    // Status cards
-    ['','2'].forEach(suffix => {
-      const si = document.getElementById('status-icon'+suffix);
-      const st = document.getElementById('status-title'+suffix);
-      const sd = document.getElementById('status-desc'+suffix);
-      const ub = document.getElementById('upgrade-btn'+suffix);
+    // Status cards (overview + subscription)
+    ['','2'].forEach(s => {
+      const si=document.getElementById('status-icon'+s);
+      const st=document.getElementById('status-title'+s);
+      const sd=document.getElementById('status-desc'+s);
+      const ub=document.getElementById('upgrade-btn'+s);
       if(!st) return;
       if(plan==='pro'||plan==='elite') {
         const dl = subEnd ? Math.ceil((subEnd-now)/864e5) : '—';
@@ -108,7 +104,7 @@
         if(hl>0) {
           if(si) si.textContent = '⏳';
           st.textContent = 'Free Trial Active';
-          sd.textContent = `${hl} hours remaining · Trial ends ${trialEnd.toLocaleDateString()}`;
+          sd.textContent = `${hl} hours remaining · Ends ${trialEnd.toLocaleDateString()}`;
         } else {
           if(si) si.textContent = '⏰';
           st.textContent = 'Trial Expired';
@@ -117,14 +113,14 @@
       }
     });
 
-    // Stats
-    const sp = document.getElementById('stat-plan');
-    const sj = document.getElementById('stat-joined');
-    const pp = document.getElementById('prof-name');
-    const pe = document.getElementById('prof-email');
-    const ppl= document.getElementById('prof-plan');
-    const pj = document.getElementById('prof-joined');
-    const sbp= document.getElementById('sub-plan');
+    // Stats & Profile
+    const sp=document.getElementById('stat-plan');
+    const sj=document.getElementById('stat-joined');
+    const pp=document.getElementById('prof-name');
+    const pe=document.getElementById('prof-email');
+    const ppl=document.getElementById('prof-plan');
+    const pj=document.getElementById('prof-joined');
+    const sbp=document.getElementById('sub-plan');
     if(sp)  sp.textContent  = plan.charAt(0).toUpperCase()+plan.slice(1);
     if(sj)  sj.textContent  = data.createdAt?.toDate?.()?.toLocaleDateString()||'—';
     if(pp)  pp.textContent  = name;
@@ -134,16 +130,21 @@
     if(sbp) sbp.textContent = plan.charAt(0).toUpperCase()+plan.slice(1);
   }
 
+  // ── Access control ────────────────────────────────────
   function checkAccess(data) {
     const plan     = data.plan || 'trial';
     const trialEnd = data.trialEnd?.toDate?.() || new Date(data.trialEnd);
     const now      = new Date();
-    const hasAccess = plan==='pro' || plan==='elite' || trialEnd > now;
-    if (!hasAccess) {
-      document.getElementById('dash-scanner-gate').style.display    = 'flex';
-      document.getElementById('dash-scanner-content').style.display = 'none';
-      document.getElementById('nse-scanner-gate').style.display     = 'flex';
-      document.getElementById('nse-scanner-content').style.display  = 'none';
+    const ok       = plan==='pro' || plan==='elite' || trialEnd > now;
+    if (!ok) {
+      ['dash-scanner-gate','nse-scanner-gate'].forEach(id => {
+        const el=document.getElementById(id);
+        if(el) el.style.display='flex';
+      });
+      ['dash-scanner-content','nse-scanner-content'].forEach(id => {
+        const el=document.getElementById(id);
+        if(el) el.style.display='none';
+      });
     }
   }
 
@@ -155,29 +156,25 @@
   function startScanners() {
     if (scannersStarted) return;
     scannersStarted = true;
-
-    // Crypto scanner
     fetchCrypto();
-    setInterval(fetchCrypto,        10000);
-    setInterval(tickCryptoCountdown, 1000);
-
-    // NSE scanner
+    setInterval(fetchCrypto, 10000);
+    setInterval(tickCryptoCD, 1000);
     fetchNSE();
-    setInterval(fetchNSE,           10000);
-    setInterval(tickNSECountdown,    1000);
+    setInterval(fetchNSE, 10000);
+    setInterval(tickNSECD, 1000);
   }
 
-  // ── CRYPTO ───────────────────────────────────────────
+  // ── Crypto ────────────────────────────────────────────
   async function fetchCrypto() {
     try {
       const r = await fetch(`${RAILWAY_URL}/api/momentum`, {signal:AbortSignal.timeout(10000)});
       if(!r.ok) throw new Error('Server error');
       const d = await r.json();
-      const te = document.getElementById('dash-total');
-      const ts = document.getElementById('dash-ts');
+      const te=document.getElementById('dash-total');
+      const ts=document.getElementById('dash-ts');
       if(te) te.textContent = d.total||'—';
       if(ts) ts.textContent = 'Updated: '+new Date(d.ts).toLocaleTimeString();
-      if(!d.top5||d.top5.length===0){
+      if(!d.top5||d.top5.length===0) {
         document.getElementById('dash-scanner-body').innerHTML=
           `<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text2)">
           <div style="font-size:1.5rem;margin-bottom:8px">⏳</div>
@@ -195,88 +192,121 @@
       const r = await fetch(`${RAILWAY_URL}/api/nse`, {signal:AbortSignal.timeout(10000)});
       if(!r.ok) throw new Error('Server error');
       const d = await r.json();
-      const te = document.getElementById('nse-total');
-      const ts = document.getElementById('nse-ts');
-      const lt = document.getElementById('nse-last-ts');
+      const te=document.getElementById('nse-total');
+      const ts=document.getElementById('nse-ts');
+      const lt=document.getElementById('nse-last-ts');
       if(te) te.textContent = d.total||'—';
       if(ts) ts.textContent = 'Updated: '+new Date(d.ts).toLocaleTimeString();
       if(lt) lt.textContent = 'Last updated: '+new Date(d.ts).toLocaleTimeString();
-      if(!d.ready||!d.top5||d.top5.length===0){
-        document.getElementById('nse-scanner-body').innerHTML=
-          `<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text2)">
+
+      // Always render indices even if top5 not ready
+      if(!d.ready||!d.top5||d.top5.length===0) {
+        const warming = `<tr><td colspan="7" style="padding:30px;text-align:center;color:var(--text2)">
           <div style="font-size:1.5rem;margin-bottom:8px">⏳</div>
-          Building 5-min rolling history...<br>
+          Building 5-min rolling history for FNO stocks...<br>
           <span style="font-size:.75rem;color:var(--yellow);margin-top:6px;display:block">
-          ⚠ NSE scanner needs ~5 minutes to build first scores. Please wait.</span>
+          ⚠ Scores appear after ~5 minutes. Indices shown above are updating.</span>
           </td></tr>`;
-      } else { renderNSETable(d.top5); }
+        renderNSETable([], d.indices||[], warming);
+      } else {
+        renderNSETable(d.top5, d.indices||[]);
+      }
     } catch(e) {
       const b=document.getElementById('nse-scanner-body');
       if(b) b.innerHTML=`<tr><td colspan="7" style="padding:30px;text-align:center;color:var(--red)">⚠ ${e.message}</td></tr>`;
     }
   }
 
-  // ── RENDER HELPERS ────────────────────────────────────
-  const RANK_STYLE=[
+  // ── Render helpers ────────────────────────────────────
+  const RANK=[
     {bg:'#f59e0b1a',border:'#f59e0b',color:'#f59e0b'},
     {bg:'#94a3b81a',border:'#94a3b8',color:'#94a3b8'},
     {bg:'#cd7f321a',border:'#cd7f32',color:'#cd7f32'},
     {bg:'#1a22351a',border:'#2a3060',color:'#4a5a80'},
     {bg:'#1a22351a',border:'#2a3060',color:'#4a5a80'},
   ];
-  function scoreColor(s){return s>10?'#00e676':s>0?'#69f0ae':s>-10?'#ff5252':'#d50000';}
+  function sc(s){return s>10?'#00e676':s>0?'#69f0ae':s>-10?'#ff5252':'#d50000';}
   function hue(sym){return(sym.charCodeAt(0)*37+(sym.charCodeAt(1)||0)*17)%360;}
-  function fmtPrice(p){if(p>=1000)return p.toFixed(2);if(p>=1)return p.toFixed(3);if(p>=0.01)return p.toFixed(4);return p.toFixed(6);}
-  function fmtVol(n){if(n>=1e9)return(n/1e9).toFixed(2)+'B';if(n>=1e6)return(n/1e6).toFixed(2)+'M';if(n>=1e3)return(n/1e3).toFixed(2)+'K';return n.toFixed(2);}
-  function fmtIndianVol(n){if(n>=1e7)return(n/1e7).toFixed(2)+'Cr';if(n>=1e5)return(n/1e5).toFixed(2)+'L';if(n>=1e3)return(n/1e3).toFixed(2)+'K';return n.toFixed(0);}
+  function fmtP(p){if(p>=1000)return p.toFixed(2);if(p>=1)return p.toFixed(3);if(p>=0.01)return p.toFixed(4);return p.toFixed(6);}
+  function fmtV(n){if(n>=1e9)return(n/1e9).toFixed(2)+'B';if(n>=1e6)return(n/1e6).toFixed(2)+'M';if(n>=1e3)return(n/1e3).toFixed(2)+'K';return n.toFixed(2);}
+  function fmtIV(n){if(n>=1e7)return(n/1e7).toFixed(2)+'Cr';if(n>=1e5)return(n/1e5).toFixed(2)+'L';if(n>=1e3)return(n/1e3).toFixed(2)+'K';return n.toFixed(0);}
+  function fmtINR(p){return'₹'+p.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
 
-  function renderCryptoTable(rows){
+  function renderCryptoTable(rows) {
     document.getElementById('dash-scanner-body').innerHTML=rows.map((r,i)=>{
-      const rs=RANK_STYLE[i],sym=r.symbol.replace('USDT',''),h=hue(r.symbol),sc=scoreColor(r.score);
+      const rs=RANK[i],sym=r.symbol.replace('USDT',''),h=hue(r.symbol),s=sc(r.score);
       return`<tr>
         <td><div class="rank-badge" style="background:${rs.bg};border:1.5px solid ${rs.border};color:${rs.color}">${i+1}</div></td>
         <td><div class="coin-cell">
           <div class="coin-avatar" style="background:hsl(${h},55%,15%);border:1.5px solid hsl(${h},55%,35%);color:hsl(${h},75%,65%)">${sym.slice(0,2)}</div>
           <div><div class="coin-sym">${sym}</div><div class="coin-sub">USDT Perpetual</div></div>
         </div></td>
-        <td>$${fmtPrice(r.price)}</td>
+        <td>$${fmtP(r.price)}</td>
         <td><span class="chg ${r.priceChange>=0?'up':'dn'}">${r.priceChange>=0?'▲':'▼'} ${Math.abs(r.priceChange).toFixed(2)}%</span></td>
         <td><span style="color:${r.volumeChange>=0?'var(--green)':'var(--red)'};font-weight:600">${r.volumeChange>=0?'+':''}${r.volumeChange.toFixed(2)}%</span></td>
-        <td><span class="score-pill" style="color:${sc};border-color:${sc}44">${r.score>=0?'+':''}${r.score.toFixed(2)}</span></td>
-        <td style="color:var(--text2)">$${fmtVol(r.qVol)}</td>
+        <td><span class="score-pill" style="color:${s};border-color:${s}44">${r.score>=0?'+':''}${r.score.toFixed(2)}</span></td>
+        <td style="color:var(--text2)">$${fmtV(r.qVol)}</td>
       </tr>`;
     }).join('');
   }
 
-  function renderNSETable(rows){
-    document.getElementById('nse-scanner-body').innerHTML=rows.map((r,i)=>{
-      const rs=RANK_STYLE[i],h=hue(r.symbol),sc=scoreColor(r.score);
+  function renderNSETable(rows, indices, warmingHtml) {
+    // ── Fixed index rows: Nifty 50 & Bank Nifty ─────────
+    const indexRows = indices.map(r => {
+      const s=sc(r.score), h=hue(r.symbol);
+      return`<tr style="background:rgba(0,196,232,.04);border-left:3px solid var(--accent)">
+        <td><div style="font-size:.65rem;font-weight:800;color:var(--accent);padding:2px 5px;background:rgba(0,196,232,.12);border-radius:4px;white-space:nowrap;text-align:center">IDX</div></td>
+        <td><div class="coin-cell">
+          <div class="coin-avatar" style="background:hsl(${h},55%,15%);border:1.5px solid hsl(${h},55%,35%);color:hsl(${h},75%,65%)">${r.symbol.slice(0,2)}</div>
+          <div>
+            <div class="coin-sym">${r.symbol}</div>
+            <div class="coin-sub" style="color:var(--accent)">${r.warming?'Warming up...':'NSE Index'}</div>
+          </div>
+        </div></td>
+        <td>${fmtINR(r.price)}</td>
+        <td><span class="chg ${r.priceChange>=0?'up':'dn'}">${r.priceChange>=0?'▲':'▼'} ${Math.abs(r.priceChange).toFixed(2)}%${r.warming?' *':''}</span></td>
+        <td><span style="color:${r.volumeChange>=0?'var(--green)':'var(--red)'};font-weight:600">${r.warming?'—':((r.volumeChange>=0?'+':'')+r.volumeChange.toFixed(2)+'%')}</span></td>
+        <td><span class="score-pill" style="color:${s};border-color:${s}44">${r.warming?'—':((r.score>=0?'+':'')+r.score.toFixed(2))}</span></td>
+        <td style="color:var(--text2)">${r.totalVolume>0?fmtIV(r.totalVolume):'—'}</td>
+      </tr>`;
+    }).join('');
+
+    // ── Separator ─────────────────────────────────────────
+    const separator = indices.length>0 ? `<tr>
+      <td colspan="7" style="padding:5px 16px;background:var(--bg3);font-size:.62rem;font-weight:700;color:var(--text3);letter-spacing:.8px;text-transform:uppercase;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+        ─── Top 5 FNO Momentum ───
+      </td>
+    </tr>` : '';
+
+    // ── Top 5 FNO stock rows ──────────────────────────────
+    const stockRows = warmingHtml || rows.map((r,i)=>{
+      const rs=RANK[i],s=sc(r.score),h=hue(r.symbol);
       return`<tr>
         <td><div class="rank-badge" style="background:${rs.bg};border:1.5px solid ${rs.border};color:${rs.color}">${i+1}</div></td>
         <td><div class="coin-cell">
           <div class="coin-avatar" style="background:hsl(${h},55%,15%);border:1.5px solid hsl(${h},55%,35%);color:hsl(${h},75%,65%)">${r.symbol.slice(0,2)}</div>
           <div><div class="coin-sym">${r.symbol}</div><div class="coin-sub">NSE FNO</div></div>
         </div></td>
-        <td>₹${r.price.toFixed(2)}</td>
+        <td>${fmtINR(r.price)}</td>
         <td><span class="chg ${r.priceChange>=0?'up':'dn'}">${r.priceChange>=0?'▲':'▼'} ${Math.abs(r.priceChange).toFixed(2)}%</span></td>
         <td><span style="color:${r.volumeChange>=0?'var(--green)':'var(--red)'};font-weight:600">${r.volumeChange>=0?'+':''}${r.volumeChange.toFixed(2)}%</span></td>
-        <td><span class="score-pill" style="color:${sc};border-color:${sc}44">${r.score>=0?'+':''}${r.score.toFixed(2)}</span></td>
-        <td style="color:var(--text2)">${fmtIndianVol(r.totalVolume)}</td>
+        <td><span class="score-pill" style="color:${s};border-color:${s}44">${r.score>=0?'+':''}${r.score.toFixed(2)}</span></td>
+        <td style="color:var(--text2)">${fmtIV(r.totalVolume)}</td>
       </tr>`;
     }).join('');
+
+    document.getElementById('nse-scanner-body').innerHTML = indexRows + separator + stockRows;
   }
 
   // ── Countdowns ────────────────────────────────────────
   let cryptoCD=10, nseCD=10;
-
-  function tickCryptoCountdown(){
+  function tickCryptoCD(){
     cryptoCD--;
     const el=document.getElementById('dash-cd');
     if(el){el.textContent=cryptoCD;el.className='cd'+(cryptoCD<=3?' warn':'');}
     if(cryptoCD<=0){cryptoCD=10;fetchCrypto();}
   }
-
-  function tickNSECountdown(){
+  function tickNSECD(){
     nseCD--;
     const el=document.getElementById('nse-cd');
     if(el){el.textContent=nseCD;el.className='cd'+(nseCD<=3?' warn':'');}
@@ -315,7 +345,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 ::-webkit-scrollbar-track{background:var(--bg2)}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 
-/* LAYOUT */
 .dash-layout{display:flex;height:100vh}
 
 /* SIDEBAR */
@@ -354,14 +383,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .dash-topbar h1{font-size:1.2rem;font-weight:800;color:#fff}
 .dash-topbar p{font-size:.8rem;color:var(--text2);margin-top:2px}
 
-/* STATS CARDS */
+/* STATS */
 .stats-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px}
 .stat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px}
 .stat-card .label{font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
 .stat-card .value{font-size:1.3rem;font-weight:800;color:#fff}
 .stat-card .sub{font-size:.72rem;color:var(--text2);margin-top:3px}
 
-/* STATUS CARD */
+/* STATUS */
 .status-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px}
 .status-left{display:flex;align-items:center;gap:14px}
 .status-icon{font-size:1.8rem}
@@ -429,7 +458,7 @@ td:first-child,td:nth-child(2){text-align:left}
 .mentor-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:22px}
 .mentor-card h4{font-size:.9rem;font-weight:700;color:#fff;margin-bottom:6px}
 .mentor-card p{font-size:.8rem;color:var(--text2);line-height:1.6;margin-bottom:14px}
-.mentor-card .tag{display:inline-block;font-size:.65rem;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase}
+.tag{display:inline-block;font-size:.65rem;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase}
 .tag-live{background:rgba(0,230,118,.1);color:var(--green);border:1px solid rgba(0,230,118,.2)}
 .tag-soon{background:rgba(245,158,11,.1);color:var(--yellow);border:1px solid rgba(245,158,11,.2)}
 .tag-recorded{background:rgba(0,196,232,.1);color:var(--accent);border:1px solid rgba(0,196,232,.2)}
@@ -517,7 +546,6 @@ td:first-child,td:nth-child(2){text-align:left}
         </div>
         <button class="btn-primary" onclick="showSection('scanner')">Open Crypto Scanner →</button>
       </div>
-
       <div class="status-card">
         <div class="status-left">
           <div class="status-icon" id="status-icon">⏳</div>
@@ -529,59 +557,36 @@ td:first-child,td:nth-child(2){text-align:left}
         <button class="upgrade-btn" id="upgrade-btn"
           onclick="window.location.href='index.html#pricing'">Upgrade to Pro</button>
       </div>
-
       <div class="stats-cards">
-        <div class="stat-card">
-          <div class="label">Current Plan</div>
-          <div class="value" id="stat-plan">—</div>
-          <div class="sub">quantsigma.in</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Member Since</div>
-          <div class="value" id="stat-joined">—</div>
-          <div class="sub">Account created</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Crypto Pairs</div>
-          <div class="value">500+</div>
-          <div class="sub">Binance Futures</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">FNO Stocks</div>
-          <div class="value">213</div>
-          <div class="sub">NSE India</div>
-        </div>
+        <div class="stat-card"><div class="label">Current Plan</div><div class="value" id="stat-plan">—</div><div class="sub">quantsigma.in</div></div>
+        <div class="stat-card"><div class="label">Member Since</div><div class="value" id="stat-joined">—</div><div class="sub">Account created</div></div>
+        <div class="stat-card"><div class="label">Crypto Pairs</div><div class="value">500+</div><div class="sub">Binance Futures</div></div>
+        <div class="stat-card"><div class="label">FNO Stocks</div><div class="value">213</div><div class="sub">NSE India</div></div>
       </div>
-
-      <!-- Quick actions -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px">
         <div class="stat-card" style="cursor:pointer;transition:.2s"
-          onmouseover="this.style.borderColor='var(--accent)'"
-          onmouseout="this.style.borderColor='var(--border)'"
+          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
           onclick="showSection('scanner')">
           <div style="font-size:1.4rem;margin-bottom:8px">📡</div>
           <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">Crypto Scanner</div>
           <div style="font-size:.75rem;color:var(--text2)">500+ USDT perpetuals · Live</div>
         </div>
         <div class="stat-card" style="cursor:pointer;transition:.2s"
-          onmouseover="this.style.borderColor='var(--accent)'"
-          onmouseout="this.style.borderColor='var(--border)'"
+          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
           onclick="showSection('equity')">
           <div style="font-size:1.4rem;margin-bottom:8px">📈</div>
           <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">NSE FNO Scanner</div>
-          <div style="font-size:.75rem;color:var(--text2)">213 FNO stocks · Live</div>
+          <div style="font-size:.75rem;color:var(--text2)">213 FNO stocks + Nifty · Live</div>
         </div>
         <div class="stat-card" style="cursor:pointer;transition:.2s"
-          onmouseover="this.style.borderColor='var(--accent)'"
-          onmouseout="this.style.borderColor='var(--border)'"
+          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
           onclick="showSection('mentorship')">
           <div style="font-size:1.4rem;margin-bottom:8px">🎓</div>
           <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">Mentorship</div>
           <div style="font-size:.75rem;color:var(--text2)">Programs · Sessions · Apply</div>
         </div>
         <div class="stat-card" style="cursor:pointer;transition:.2s"
-          onmouseover="this.style.borderColor='var(--yellow)'"
-          onmouseout="this.style.borderColor='var(--border)'"
+          onmouseover="this.style.borderColor='var(--yellow)'" onmouseout="this.style.borderColor='var(--border)'"
           onclick="showSection('strategies')">
           <div style="font-size:1.4rem;margin-bottom:8px">🧠</div>
           <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">Strategies</div>
@@ -593,10 +598,7 @@ td:first-child,td:nth-child(2){text-align:left}
     <!-- ── CRYPTO SCANNER ── -->
     <div class="dash-section" id="section-scanner">
       <div class="dash-topbar">
-        <div>
-          <h1>📡 Crypto Futures Scanner</h1>
-          <p>Binance USDT-M Perpetuals · Real-time momentum · Crypto only</p>
-        </div>
+        <div><h1>📡 Crypto Futures Scanner</h1><p>Binance USDT-M Perpetuals · Real-time momentum · Crypto only</p></div>
         <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--text2)">
           Refreshes in <span class="cd" id="dash-cd">10</span>s
         </div>
@@ -625,21 +627,14 @@ td:first-child,td:nth-child(2){text-align:left}
         <div id="dash-scanner-content">
           <div class="table-wrap">
             <table>
-              <thead>
-                <tr>
-                  <th style="width:40px">#</th>
-                  <th>Symbol</th>
-                  <th>Price (USDT)</th>
-                  <th>Price Δ 5m</th>
-                  <th>Vol Δ 5m</th>
-                  <th>Score</th>
-                  <th>Quote Vol</th>
-                </tr>
-              </thead>
+              <thead><tr>
+                <th style="width:40px">#</th><th>Symbol</th>
+                <th>Price (USDT)</th><th>Price Δ 5m</th>
+                <th>Vol Δ 5m</th><th>Score</th><th>Quote Vol</th>
+              </tr></thead>
               <tbody id="dash-scanner-body">
                 <tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text2)">
-                  <div style="font-size:1.5rem;margin-bottom:8px">⏳</div>Connecting...
-                </td></tr>
+                  <div style="font-size:1.5rem;margin-bottom:8px">⏳</div>Connecting...</td></tr>
               </tbody>
             </table>
           </div>
@@ -654,10 +649,7 @@ td:first-child,td:nth-child(2){text-align:left}
     <!-- ── NSE FNO SCANNER ── -->
     <div class="dash-section" id="section-equity">
       <div class="dash-topbar">
-        <div>
-          <h1>📈 NSE FNO Scanner</h1>
-          <p>NSE Futures &amp; Options stocks · Real-time momentum · 213 stocks</p>
-        </div>
+        <div><h1>📈 NSE FNO Scanner</h1><p>NSE Futures &amp; Options · Nifty 50 · Bank Nifty · 213 FNO stocks</p></div>
         <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--text2)">
           Refreshes in <span class="cd" id="nse-cd">10</span>s
         </div>
@@ -666,7 +658,7 @@ td:first-child,td:nth-child(2){text-align:left}
         <div class="scanner-head">
           <div class="scanner-head-left">
             <div class="live-pill"><span class="live-dot"></span>Live</div>
-            <span class="scanner-title">Top 5 Momentum — NSE FNO Stocks</span>
+            <span class="scanner-title">Nifty 50 · Bank Nifty · Top 5 FNO Momentum</span>
           </div>
           <span style="font-size:.7rem;color:var(--text3)" id="nse-ts">Awaiting...</span>
         </div>
@@ -686,23 +678,17 @@ td:first-child,td:nth-child(2){text-align:left}
         <div id="nse-scanner-content">
           <div class="table-wrap">
             <table>
-              <thead>
-                <tr>
-                  <th style="width:40px">#</th>
-                  <th>Symbol</th>
-                  <th>Price (₹)</th>
-                  <th>Price Δ 5m</th>
-                  <th>Vol Δ 5m</th>
-                  <th>Score</th>
-                  <th>Total Volume</th>
-                </tr>
-              </thead>
+              <thead><tr>
+                <th style="width:40px">#</th><th>Symbol</th>
+                <th>Price (₹)</th><th>Price Δ 5m</th>
+                <th>Vol Δ 5m</th><th>Score</th><th>Total Volume</th>
+              </tr></thead>
               <tbody id="nse-scanner-body">
                 <tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text2)">
                   <div style="font-size:1.5rem;margin-bottom:8px">⏳</div>
                   Connecting to NSE scanner...<br>
                   <span style="font-size:.75rem;color:var(--yellow);margin-top:6px;display:block">
-                  ⚠ NSE scanner needs ~5 minutes to build first scores. Please wait.</span>
+                  ⚠ NSE scores need ~5 minutes. Nifty &amp; BankNifty appear first.</span>
                 </td></tr>
               </tbody>
             </table>
@@ -722,7 +708,7 @@ td:first-child,td:nth-child(2){text-align:left}
         <div class="coming-tag">Coming Soon</div>
         <div class="cs-icon">🧠</div>
         <h3>Strategy Library</h3>
-        <p>Curated quantitative trading strategies with backtested performance metrics. Momentum, mean-reversion, and breakout systems. Coming in the next update.</p>
+        <p>Curated quantitative strategies with backtested performance metrics. Momentum, mean-reversion, and breakout systems.</p>
       </div>
     </div>
 
@@ -769,18 +755,11 @@ td:first-child,td:nth-child(2){text-align:left}
         <button class="upgrade-btn" id="upgrade-btn2" onclick="window.location.href='index.html#pricing'">Upgrade Plan</button>
       </div>
       <div class="stats-cards">
-        <div class="stat-card">
-          <div class="label">Plan</div>
-          <div class="value" id="sub-plan">—</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Scanners Access</div>
-          <div class="value">2 Live</div>
-          <div class="sub">Crypto + NSE FNO</div>
-        </div>
+        <div class="stat-card"><div class="label">Plan</div><div class="value" id="sub-plan">—</div></div>
+        <div class="stat-card"><div class="label">Scanners Access</div><div class="value">2 Live</div><div class="sub">Crypto + NSE FNO</div></div>
       </div>
       <div style="margin-top:16px;padding:16px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:.8rem;color:var(--text2)">
-        For billing support or cancellations contact <a href="mailto:hello@quantsigma.in" style="color:var(--accent)">hello@quantsigma.in</a>
+        For billing support contact <a href="mailto:hello@quantsigma.in" style="color:var(--accent)">hello@quantsigma.in</a>
       </div>
     </div>
 
