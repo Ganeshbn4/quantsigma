@@ -13,14 +13,9 @@ const cors    = require("cors");
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors({
-  origin: [
-    "https://quantsigma.in",
-    "https://www.quantsigma.in",
-    "http://localhost:3000",
-    /\.vercel\.app$/
-  ]
-}));
+// Open CORS — scanner data is public, no sensitive info exposed
+app.use(cors());
+app.options('*', cors()); // Handle preflight for all routes
 
 // ══════════════════════════════════════════════════════════
 //  SCANNER 1 — CRYPTO FUTURES (Binance)
