@@ -1160,7 +1160,7 @@ function lockScanner(reason){
   }
 }
 
-const RAILWAY_URL='https://quantsigma-production.up.railway.app';
+const RAILWAY_URL = 'https://api.quantsigma.in';
 async function fetchMomentum(){
   try{
     const r=await fetch(`${RAILWAY_URL}/api/momentum`,{signal:AbortSignal.timeout(10000)});
