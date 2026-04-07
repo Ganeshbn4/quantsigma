@@ -1,9 +1,6 @@
 // ============================================================
-//  QuantSigma — Scanner Server v5.1
-//  Scanner 1 : Crypto Futures (Binance USDT-M Perpetuals)
-//  Scanner 2 : Indian FNO Stocks (NSE) + Nifty & BankNifty
-//  Formula   : Score = PriceChange × 0.6 + VolumeChange × 0.4
-//  Window    : 5-min rolling (same logic as crypto)
+//  QuantSigma — Scanner Server v5.2
+//  Crash protected — handles NSE 403 gracefully
 // ============================================================
 
 const express = require("express");
@@ -13,16 +10,24 @@ const cors    = require("cors");
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// Open CORS — scanner data is public, no sensitive info exposed
+// Open CORS — scanner data is public
 app.use(cors());
-app.options('*', cors()); // Handle preflight for all routes
+app.options('*', cors());
+
+// ── Prevent server crash on unhandled errors ──────────────
+process.on('uncaughtException', (e) => {
+  console.error('Uncaught Exception (server kept alive):', e.message);
+});
+process.on('unhandledRejection', (e) => {
+  console.error('Unhandled Rejection (server kept alive):', e?.message || e);
+});
 
 // ══════════════════════════════════════════════════════════
 //  SCANNER 1 — CRYPTO FUTURES (Binance)
 // ══════════════════════════════════════════════════════════
 const BAPI    = "https://fapi.binance.com";
-const WINDOW  = 300;  // 5-min rolling window (seconds)
-const REFRESH = 10;   // poll every 10 seconds
+const WINDOW  = 300;
+const REFRESH = 10;
 
 const cryptoHistory = {};
 let cryptoSymbols   = new Set();
@@ -88,6 +93,7 @@ async function tickCrypto() {
     }
   } catch(e) {
     console.error("Crypto tick error:", e.message);
+    // Don't crash — just skip this tick
   }
 }
 
@@ -110,10 +116,11 @@ const NSE_HEADERS = {
 let nseCookies   = "";
 const nseHistory = {};
 let nseResults   = [];
-let nseIndices   = [];  // Fixed rows: Nifty 50 + Bank Nifty
+let nseIndices   = [];
 let nseTotal     = 0;
 let nseReady     = false;
 let nseLastFetch = null;
+let nseFailCount = 0; // track consecutive failures
 
 async function getNSECookies() {
   try {
@@ -124,37 +131,47 @@ async function getNSECookies() {
     if (raw) {
       nseCookies = raw.map(c => c.split(";")[0]).join("; ");
       console.log("✅ NSE: Cookies refreshed");
+      nseFailCount = 0; // reset on success
     }
   } catch(e) {
     console.error("NSE cookie error:", e.message);
+    nseCookies = "";
   }
 }
 
-// ── Helper: update rolling history and compute score ─────
 function computeScore(symbol, price, vol, now) {
   if (!nseHistory[symbol]) nseHistory[symbol] = [];
   nseHistory[symbol].push([now, price, vol]);
   nseHistory[symbol] = nseHistory[symbol].filter(x => now - x[0] < WINDOW);
-
   const h = nseHistory[symbol];
-  if (h.length < 2) return null; // not enough data yet
-
+  if (h.length < 2) return null;
   const [, oldP, oldV] = h[0];
   const [, newP, newV] = h[h.length - 1];
   if (!oldP) return null;
-
   const pc = ((newP - oldP) / oldP) * 100;
   const vc = oldV ? ((newV - oldV) / oldV) * 100 : 0;
   return { pc, vc, score: (pc * 0.6) + (vc * 0.4), newP, newV };
 }
 
 async function tickNSE() {
+  // If too many consecutive failures, back off
+  if (nseFailCount >= 5) {
+    console.log("NSE: Too many failures, waiting for next cookie refresh...");
+    nseLastFetch = Date.now();
+    return;
+  }
+
   try {
     if (!nseCookies) await getNSECookies();
+    if (!nseCookies) {
+      nseFailCount++;
+      nseLastFetch = Date.now();
+      return;
+    }
 
     const now = Date.now() / 1000;
 
-    // ── Fetch FNO stocks ──────────────────────────────────
+    // ── Fetch FNO stocks ──────────────────────────────
     const { data: fnoData } = await axios.get(NSE_FNO_URL, {
       headers: { ...NSE_HEADERS, "Cookie": nseCookies },
       timeout: 15000
@@ -169,15 +186,12 @@ async function tickNSE() {
           if (!stock.symbol ||
               stock.symbol.startsWith("NIFTY") ||
               stock.symbol.startsWith("SENSEX")) continue;
-
           const price = parseFloat(stock.lastPrice?.toString().replace(/,/g, "") || 0);
           const vol   = parseFloat(stock.totalTradedVolume?.toString().replace(/,/g, "") || 0);
           if (!price || !vol) continue;
-
           nseTotal++;
           const res = computeScore(stock.symbol, price, vol, now);
           if (!res) continue;
-
           fnoResults.push({
             symbol:       stock.symbol,
             price:        res.newP,
@@ -193,8 +207,9 @@ async function tickNSE() {
     nseResults   = fnoResults.sort((a, b) => b.score - a.score).slice(0, 5);
     nseReady     = fnoResults.length > 0;
     nseLastFetch = Date.now();
+    nseFailCount = 0; // reset on success
 
-    // ── Fetch Nifty 50 & Bank Nifty ──────────────────────
+    // ── Fetch Nifty 50 & Bank Nifty ──────────────────
     try {
       const { data: idxData } = await axios.get(NSE_IDX_URL, {
         headers: { ...NSE_HEADERS, "Cookie": nseCookies },
@@ -202,135 +217,104 @@ async function tickNSE() {
       });
 
       nseIndices = [];
-
       if (idxData && idxData.data) {
-        // Targets: Nifty 50 and Nifty Bank
         const targets = [
-          { key: "NIFTY 50",   label: "NIFTY 50"   },
-          { key: "NIFTY BANK", label: "NIFTY BANK"  }
+          { key: "NIFTY 50",   label: "NIFTY 50"  },
+          { key: "NIFTY BANK", label: "NIFTY BANK" }
         ];
-
         for (const target of targets) {
           const idx = idxData.data.find(i => i.index === target.key);
           if (!idx) continue;
-
           const price = parseFloat(idx.last || idx.lastPrice || 0);
           const vol   = parseFloat(idx.totalTradedVolume || 0);
           if (!price) continue;
-
           const res = computeScore(target.label, price, vol, now);
-
           if (res) {
-            // Full rolling window score available
             nseIndices.push({
-              symbol:       target.label,
-              price:        res.newP,
-              priceChange:  res.pc,
-              volumeChange: res.vc,
-              score:        res.score,
-              totalVolume:  res.newV,
-              isIndex:      true,
-              warming:      false
+              symbol: target.label, price: res.newP,
+              priceChange: res.pc, volumeChange: res.vc,
+              score: res.score, totalVolume: res.newV,
+              isIndex: true, warming: false
             });
           } else {
-            // Not enough history yet — show day change as placeholder
             nseIndices.push({
-              symbol:       target.label,
-              price:        price,
-              priceChange:  parseFloat(idx.percentChange || idx.pChange || 0),
-              volumeChange: 0,
-              score:        0,
-              totalVolume:  vol,
-              isIndex:      true,
-              warming:      true  // indicates rolling score not ready yet
+              symbol: target.label, price,
+              priceChange: parseFloat(idx.percentChange || idx.pChange || 0),
+              volumeChange: 0, score: 0, totalVolume: vol,
+              isIndex: true, warming: true
             });
           }
         }
       }
     } catch(e) {
       console.error("Index fetch error:", e.message);
+      // Don't crash — indices are optional
     }
 
     console.log(`\n📈 NSE FNO TOP 5 (${nseTotal} stocks):`);
     for (const r of nseResults) {
       console.log(`  ${r.symbol.padEnd(16)} Price: ${r.priceChange.toFixed(2)}% | Score: ${r.score.toFixed(2)}`);
     }
-    console.log(`📊 Indices: ${nseIndices.map(i => `${i.symbol} ${i.priceChange.toFixed(2)}%`).join(' | ')}`);
 
   } catch(e) {
     console.error("NSE tick error:", e.message);
-    // Don't crash — just reset cookies and continue
-    nseCookies = "";
+    nseFailCount++;
+    nseCookies   = "";
     nseLastFetch = Date.now();
+    // Server stays alive — no rethrow
   }
 }
 
 // ══════════════════════════════════════════════════════════
 //  API ROUTES
 // ══════════════════════════════════════════════════════════
-
-// Crypto scanner
 app.get("/api/momentum", (req, res) => {
   res.json({ ok: true, total: cryptoTotal, top5: cryptoResults, ts: cryptoLastFetch });
 });
 
-// NSE FNO scanner + indices
 app.get("/api/nse", (req, res) => {
   res.json({
-    ok:      true,
-    total:   nseTotal,
-    top5:    nseResults,
-    indices: nseIndices,   // Always contains Nifty 50 & Bank Nifty
-    ready:   nseReady,
-    ts:      nseLastFetch
+    ok: true, total: nseTotal,
+    top5: nseResults, indices: nseIndices,
+    ready: nseReady, ts: nseLastFetch
   });
 });
 
-// Health check
 app.get("/health", (req, res) => {
   res.json({ status: "ok", uptime: process.uptime() });
 });
 
 app.get("/", (req, res) => {
-  res.json({ name: "QuantSigma API v5.1", endpoints: ["/api/momentum", "/api/nse"] });
+  res.json({ name: "QuantSigma API v5.2", endpoints: ["/api/momentum", "/api/nse"] });
 });
 
 // ══════════════════════════════════════════════════════════
 //  START
 // ══════════════════════════════════════════════════════════
 (async () => {
-  try {
-    console.log("\n🚀 QuantSigma Scanner v5.1 starting...\n");
+  console.log("\n🚀 QuantSigma Scanner v5.2 starting...\n");
 
-    // Crypto
-    await loadCryptoSymbols();
-    await tickCrypto();
-    setInterval(tickCrypto, REFRESH * 1000);
-    setInterval(loadCryptoSymbols, 6 * 60 * 60 * 1000);
+  // Crypto — start immediately
+  await loadCryptoSymbols();
+  await tickCrypto();
+  setInterval(tickCrypto, REFRESH * 1000);
+  setInterval(loadCryptoSymbols, 6 * 60 * 60 * 1000);
 
-    // NSE (small delay to stagger startup)
-    setTimeout(async () => {
+  // NSE — start with delay, refresh cookies every 30 min
+  setTimeout(async () => {
+    await getNSECookies();
+    await tickNSE();
+    setInterval(tickNSE, REFRESH * 1000);
+    setInterval(async () => {
+      nseFailCount = 0; // reset fail count on cookie refresh
       await getNSECookies();
-      await tickNSE();
-      setInterval(tickNSE, REFRESH * 1000);
-      setInterval(getNSECookies, 30 * 60 * 1000); // refresh cookies every 30 min
-    }, 3000);
+    }, 30 * 60 * 1000);
+  }, 3000);
 
-  } catch(e) {
-    console.error("Startup error:", e.message);
-    process.exit(1);
-  }
 })();
-// Prevent server crash on unhandled errors
-process.on('uncaughtException', (e) => {
-  console.error('Uncaught Exception:', e.message);
-});
-process.on('unhandledRejection', (e) => {
-  console.error('Unhandled Rejection:', e.message);
-});
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`\n✅ Server on port ${PORT}`);
+  console.log(`\n✅ Server running on port ${PORT}`);
   console.log(`📡 Crypto  → /api/momentum`);
-  console.log(`📈 NSE FNO → /api/nse (includes Nifty 50 & Bank Nifty)\n`);
+  console.log(`📈 NSE FNO → /api/nse\n`);
 });
