@@ -482,9 +482,16 @@ td:first-child,td:nth-child(2){text-align:left}
 
   <!-- SIDEBAR -->
   <aside class="sidebar">
-    <div class="sidebar-logo">
-      <div class="logo-mark">QΣ</div>
-      <span class="logo-name">Quant<span>Sigma</span></span>
+    <div class="sidebar-logo" style="flex-direction:column;align-items:flex-start;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="logo-mark">QΣ</div>
+        <span class="logo-name">Quant<span>Sigma</span></span>
+      </div>
+      <a href="index.html" style="display:flex;align-items:center;gap:5px;font-size:.72rem;color:var(--text3);text-decoration:none;transition:.15s"
+        onmouseover="this.style.color='var(--accent)'"
+        onmouseout="this.style.color='var(--text3)'">
+        ← Back to main page
+      </a>
     </div>
     <nav class="sidebar-nav">
       <div class="nav-section-label">Main</div>
