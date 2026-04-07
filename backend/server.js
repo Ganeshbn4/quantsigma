@@ -259,7 +259,9 @@ async function tickNSE() {
 
   } catch(e) {
     console.error("NSE tick error:", e.message);
-    nseCookies = ""; // force cookie refresh next tick
+    // Don't crash — just reset cookies and continue
+    nseCookies = "";
+    nseLastFetch = Date.now();
   }
 }
 
@@ -319,6 +321,13 @@ app.get("/", (req, res) => {
     process.exit(1);
   }
 })();
+// Prevent server crash on unhandled errors
+process.on('uncaughtException', (e) => {
+  console.error('Uncaught Exception:', e.message);
+});
+process.on('unhandledRejection', (e) => {
+  console.error('Unhandled Rejection:', e.message);
+});
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`\n✅ Server on port ${PORT}`);
