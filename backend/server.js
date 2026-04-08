@@ -148,7 +148,7 @@ async function fetchBatch(symbols) {
       const { data } = await axios.get(url, {
         timeout: 10000,
         headers: {
-          "User-Agent":  "python-requests/2.31.0",  // mimic yfinance exactly
+          "User-Agent":  "python-requests/2.31.0",
           "Accept":      "*/*",
           "Accept-Encoding": "gzip, deflate"
         }
@@ -161,7 +161,6 @@ async function fetchBatch(symbols) {
       const closes  = quotes.close  || [];
       const volumes = quotes.volume || [];
 
-      // Get last valid close and volume
       let price = null, volume = 0;
       for (let i = closes.length - 1; i >= 0; i--) {
         if (closes[i] && closes[i] > 0) { price = closes[i]; break; }
@@ -170,7 +169,10 @@ async function fetchBatch(symbols) {
         if (volumes[i] && volumes[i] > 0) { volume = volumes[i]; break; }
       }
       if (price) results[sym] = { price, volume };
-    } catch(_) {}
+    } catch(e) {
+      // Log first failure only to avoid spam
+      if (sym === "RELIANCE") console.error(`❌ RELIANCE fetch error: ${e.response?.status} ${e.message}`);
+    }
   }));
 
   return results;
@@ -214,6 +216,7 @@ async function tickNSE() {
       const results = await fetchBatch(batch);
       Object.assign(newSnapshot, results);
       fetched += Object.keys(results).length;
+      if (i === 0) console.log(`  First batch result: ${Object.keys(results).length}/${batch.length} stocks fetched`);
       if (i + BATCH_SIZE < FNO_SYMBOLS.length) await sleep(SLEEP_MS);
     }
 
