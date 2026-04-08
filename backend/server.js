@@ -1,7 +1,7 @@
 // ============================================================
 //  QuantSigma — Scanner Server
 //  Scanner 1 : Crypto Futures (Binance)  — every 10s
-//  Scanner 2 : NSE FNO (Yahoo Finance)   — every 5 min
+//  Scanner 2 : NSE FNO (Yahoo download)  — every 5 min
 //  Formula   : Score = PriceChange × 0.6 + VolumeChange × 0.4
 // ============================================================
 
@@ -35,18 +35,11 @@ async function loadCryptoSymbols() {
     const { data } = await axios.get(`${BAPI}/fapi/v1/exchangeInfo`, { timeout: 15000 });
     cryptoSymbols = new Set(
       data.symbols
-        .filter(s =>
-          s.underlyingType === "COIN"      &&
-          s.contractType   === "PERPETUAL" &&
-          s.status         === "TRADING"   &&
-          s.symbol.endsWith("USDT")
-        )
+        .filter(s => s.underlyingType==="COIN" && s.contractType==="PERPETUAL" && s.status==="TRADING" && s.symbol.endsWith("USDT"))
         .map(s => s.symbol)
     );
     console.log(`✅ Crypto: Loaded ${cryptoSymbols.size} symbols`);
-  } catch(e) {
-    console.error("Crypto symbol load error:", e.message);
-  }
+  } catch(e) { console.error("Crypto symbol load error:", e.message); }
 }
 
 async function tickCrypto() {
@@ -65,31 +58,24 @@ async function tickCrypto() {
       cryptoHistory[coin.symbol] = cryptoHistory[coin.symbol].filter(x => now - x[0] < WINDOW);
     }
     const results = [];
-    for (const symbol of Object.keys(cryptoHistory)) {
-      const h = cryptoHistory[symbol];
+    for (const sym of Object.keys(cryptoHistory)) {
+      const h = cryptoHistory[sym];
       if (h.length < 2) continue;
-      const [, oldP, oldV] = h[0];
-      const [, newP, newV] = h[h.length - 1];
+      const [,oldP,oldV] = h[0], [,newP,newV] = h[h.length-1];
       if (!oldP || !oldV) continue;
-      const pc    = ((newP - oldP) / oldP) * 100;
-      const vc    = ((newV - oldV) / oldV) * 100;
-      const score = (pc * 0.6) + (vc * 0.4);
-      results.push({ symbol, price: newP, priceChange: pc, volumeChange: vc, score, qVol: newV });
+      const pc = ((newP-oldP)/oldP)*100, vc = ((newV-oldV)/oldV)*100;
+      results.push({ symbol:sym, price:newP, priceChange:pc, volumeChange:vc, score:(pc*0.6)+(vc*0.4), qVol:newV });
     }
-    cryptoResults   = results.sort((a, b) => b.score - a.score).slice(0, 5);
+    cryptoResults   = results.sort((a,b) => b.score-a.score).slice(0,5);
     cryptoLastFetch = Date.now();
     console.log("\n🔥 CRYPTO TOP 5:");
-    for (const r of cryptoResults) {
-      console.log(`  ${r.symbol.padEnd(14)} Price: ${r.priceChange.toFixed(2)}% | Score: ${r.score.toFixed(2)}`);
-    }
-  } catch(e) {
-    console.error("Crypto tick error:", e.message);
-  }
+    cryptoResults.forEach(r => console.log(`  ${r.symbol.padEnd(14)} Price: ${r.priceChange.toFixed(2)}% | Score: ${r.score.toFixed(2)}`));
+  } catch(e) { console.error("Crypto tick error:", e.message); }
 }
 
 // ══════════════════════════════════════════════════════════
-//  SCANNER 2 — NSE FNO (Yahoo Finance, every 5 min)
-//  Simple: fetch all stocks once, calc score, store top 5
+//  SCANNER 2 — NSE FNO via Yahoo Finance download endpoint
+//  Mirrors exactly what yfinance.download() does in Python
 // ══════════════════════════════════════════════════════════
 
 const FNO_SYMBOLS = [
@@ -120,190 +106,152 @@ const FNO_SYMBOLS = [
   "UNIONBANK","UNOMINDA","VBL","VGUARD","WELCORP","ZOMATO",
   "ADANIENT","ADANIGREEN","ADANIPOWER","ANGELONE","ATGL","CAMS","CANFINHOME",
   "CLEAN","CUMMINSIND","CYIENT","ENDURANCE","EQUITAS","FLUOROCHEM",
-  "GODREJPROP","GRINDWELL","IPCALAB","JBCHEPHARM","JKPAPER","JUBLINGREA",
-  "KRBL","LINDEINDIA","MEDANTA","NIACL","NUVOCO","OLECTRA","ORIENTCEM",
-  "PGHH","PHILIPCARB","PIIND","POLYCAB","PRINCEPIPE","QUESS","RADICO",
-  "ROUTE","SAREGAMA","SEQUENT","SOBHA","SPARC","STLTECH","SUMICHEM",
-  "SUPREMEIND","TRENT","TRIDENT","UJJIVAN","WHIRLPOOL","AMARAJABAT",
-  "APOLLOTYRE","ATUL","BAJAJELEC","BSOFT","CESC","CHAMBLFERT","CONCOR",
+  "GRINDWELL","IPCALAB","JBCHEPHARM","JKPAPER","JUBLINGREA",
+  "LINDEINDIA","NIACL","NUVOCO","OLECTRA","ORIENTCEM",
+  "PGHH","PIIND","PRINCEPIPE","QUESS","RADICO",
+  "ROUTE","SAREGAMA","SEQUENT","SPARC","STLTECH","SUMICHEM",
+  "SUPREMEIND","TRIDENT","UJJIVAN","WHIRLPOOL","AMARAJABAT",
+  "APOLLOTYRE","ATUL","BAJAJELEC","CESC","CHAMBLFERT","CONCOR",
   "COROMANDEL","CROMPTON","CUB","DALBHARAT","DELTACORP","EIDPARRY",
-  "EXIDEIND","GNFC","GSPL","IBULHSGFIN","INDUSTOWER","INOXLEISUR",
-  "INTELLECT","ISGEC","ITI","JINDALSTEL","JUSTDIAL","MCDOWELL-N",
-  "MINDTREE","MOTHERSON","MFSL","NAUKRI","NAVINFLUOR","OBEROIRLTY",
-  "PCBL","PEL","PFIZER","PRAJIND","RBLBANK","SCI","SHYAMMETL",
-  "SJVN","STARHEALTH","SRTRANSFIN","TATAPOWER","TCNSBRANDS","TEJASNET",
-  "TIMKEN","TTML","UCOBANK","UJJIVANSFB","USHAMART","VAIBHAVGBL",
-  "VINATIORGA","VIPIND","WELSPUNLIV"
+  "EXIDEIND","GNFC","GSPL","INDUSTOWER","INOXLEISUR",
+  "INTELLECT","JINDALSTEL","JUSTDIAL","MCDOWELL-N",
+  "MOTHERSON","MFSL","NAUKRI","NAVINFLUOR",
+  "PCBL","PEL","PFIZER","PRAJIND","SCI","SHYAMMETL",
+  "STARHEALTH","SRTRANSFIN","TCNSBRANDS","TIMKEN",
+  "TTML","UCOBANK","UJJIVANSFB","USHAMART","VAIBHAVGBL",
+  "VINATIORGA","VIPIND","WELSPUNLIV","MINDTREE","NAUKRI"
 ];
 
-// Previous snapshot for score calculation (price & volume from last fetch)
-let nsePrevSnapshot = {}; // { symbol: { price, volume } }
+const BATCH_SIZE  = 50;   // same as your Python script
+const SLEEP_MS    = 500;  // 0.5s between batches — same as Python
+
+// Previous snapshot for delta calculation
+let nsePrevSnapshot = {};
 let nseResults      = [];
 let nseIndices      = [];
 let nseTotal        = 0;
 let nseReady        = false;
 let nseLastFetch    = null;
 
-// Yahoo Finance uses query2 with these headers — works from server IPs
-const UA_LIST = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
-];
-function randomUA() { return UA_LIST[Math.floor(Math.random() * UA_LIST.length)]; }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// Single request — all symbols at once, no batching
-async function fetchYahooQuotes(symbols) {
-  const joined = symbols.map(s => `${s}.NS`).join(",");
-  const url = `https://query2.finance.yahoo.com/v8/finance/spark?symbols=${encodeURIComponent(joined)}&range=1d&interval=5m`;
-  try {
-    const { data } = await axios.get(url, {
-      timeout: 30000,
-      headers: {
-        "User-Agent":      randomUA(),
-        "Accept":          "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Referer":         "https://finance.yahoo.com/markets/stocks/most-active/",
-        "Origin":          "https://finance.yahoo.com",
-        "Cache-Control":   "no-cache",
-        "Pragma":          "no-cache"
+// Mirrors yf.download(tickers, period="1d", interval="1m")
+// Uses Yahoo's chart API — same data source, same endpoint yfinance uses internally
+async function fetchBatch(symbols) {
+  // Fetch each symbol's latest 1d 1m data and extract last close+volume
+  const results = {};
+
+  await Promise.all(symbols.map(async sym => {
+    const ticker = `${sym}.NS`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`;
+    try {
+      const { data } = await axios.get(url, {
+        timeout: 10000,
+        headers: {
+          "User-Agent":  "python-requests/2.31.0",  // mimic yfinance exactly
+          "Accept":      "*/*",
+          "Accept-Encoding": "gzip, deflate"
+        }
+      });
+      const res    = data?.chart?.result?.[0];
+      const meta   = res?.meta;
+      const quotes = res?.indicators?.quote?.[0];
+      if (!meta || !quotes) return;
+
+      const closes  = quotes.close  || [];
+      const volumes = quotes.volume || [];
+
+      // Get last valid close and volume
+      let price = null, volume = 0;
+      for (let i = closes.length - 1; i >= 0; i--) {
+        if (closes[i] && closes[i] > 0) { price = closes[i]; break; }
       }
-    });
-    return data?.spark?.result || [];
-  } catch(e) {
-    console.error("Yahoo spark error:", e.response?.status, e.message);
-    return [];
-  }
+      for (let i = volumes.length - 1; i >= 0; i--) {
+        if (volumes[i] && volumes[i] > 0) { volume = volumes[i]; break; }
+      }
+      if (price) results[sym] = { price, volume };
+    } catch(_) {}
+  }));
+
+  return results;
 }
 
-async function fetchYahooIndices() {
-  const joined = "^NSEI,^NSEBANK";
-  const url = `https://query2.finance.yahoo.com/v8/finance/spark?symbols=${encodeURIComponent(joined)}&range=1d&interval=5m`;
-  try {
-    const { data } = await axios.get(url, {
-      timeout: 15000,
-      headers: {
-        "User-Agent": randomUA(),
-        "Accept":     "application/json, text/plain, */*",
-        "Referer":    "https://finance.yahoo.com/"
-      }
-    });
-    return data?.spark?.result || [];
-  } catch(e) {
-    console.error("Yahoo index error:", e.response?.status, e.message);
-    return [];
+async function fetchIndices() {
+  const idxMap = { "^NSEI": "NIFTY 50", "^NSEBANK": "NIFTY BANK" };
+  const results = {};
+  for (const [ticker, label] of Object.entries(idxMap)) {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d`;
+    try {
+      const { data } = await axios.get(url, {
+        timeout: 10000,
+        headers: { "User-Agent": "python-requests/2.31.0", "Accept": "*/*" }
+      });
+      const res    = data?.chart?.result?.[0];
+      const quotes = res?.indicators?.quote?.[0];
+      if (!quotes) continue;
+      const closes  = quotes.close  || [];
+      const volumes = quotes.volume || [];
+      let price = null, volume = 0;
+      for (let i = closes.length-1; i >= 0; i--) { if (closes[i]>0) { price=closes[i]; break; } }
+      for (let i = volumes.length-1; i >= 0; i--) { if (volumes[i]>0) { volume=volumes[i]; break; } }
+      if (price) results[label] = { price, volume };
+    } catch(_) {}
   }
-}
-
-// Extract latest close price & volume from spark response
-function extractFromSpark(item) {
-  try {
-    const resp   = item?.response?.[0];
-    const meta   = resp?.meta;
-    const quotes = resp?.quotes;
-    if (!meta || !quotes || quotes.length === 0) return null;
-    // Get latest valid close
-    const closes  = quotes.map(q => q.close).filter(v => v && v > 0);
-    const volumes = quotes.map(q => q.volume).filter(v => v && v > 0);
-    if (closes.length === 0) return null;
-    return {
-      price:  closes[closes.length - 1],
-      volume: volumes.length > 0 ? volumes[volumes.length - 1] : 0
-    };
-  } catch(_) {
-    return null;
-  }
+  return results;
 }
 
 async function tickNSE() {
   try {
-    console.log("\n📡 NSE: Fetching from Yahoo Finance (spark)...");
+    console.log("\n📡 NSE: Fetching via Yahoo chart API (yfinance-style)...");
     const now = Date.now();
 
-    // Single request — all symbols at once
-    const allResults = await fetchYahooQuotes(FNO_SYMBOLS);
-
-    nseTotal = 0;
-    const fnoResults  = [];
+    // Fetch in batches of 50 with 0.5s sleep between — same as your Python
     const newSnapshot = {};
+    let fetched = 0;
 
-    for (const item of allResults) {
-      try {
-        const sym = (item.symbol || "").replace(".NS", "");
-        if (!sym) continue;
-        const q = extractFromSpark(item);
-        if (!q || q.price <= 0) continue;
-
-        newSnapshot[sym] = { price: q.price, volume: q.volume };
-        nseTotal++;
-
-        // Score needs previous snapshot
-        const prev = nsePrevSnapshot[sym];
-        if (!prev) continue; // First run — no prev data yet
-
-        const pc    = ((q.price  - prev.price)  / prev.price)  * 100;
-        const vc    = prev.volume > 0 ? ((q.volume - prev.volume) / prev.volume) * 100 : 0;
-        const score = (pc * 0.6) + (vc * 0.4);
-
-        fnoResults.push({
-          symbol:       sym,
-          price:        q.price,
-          priceChange:  pc,
-          volumeChange: vc,
-          score,
-          totalVolume:  q.volume
-        });
-      } catch(_) {}
+    for (let i = 0; i < FNO_SYMBOLS.length; i += BATCH_SIZE) {
+      const batch   = FNO_SYMBOLS.slice(i, i + BATCH_SIZE);
+      const results = await fetchBatch(batch);
+      Object.assign(newSnapshot, results);
+      fetched += Object.keys(results).length;
+      if (i + BATCH_SIZE < FNO_SYMBOLS.length) await sleep(SLEEP_MS);
     }
 
-    // Save snapshot for next tick
+    nseTotal = fetched;
+    const fnoResults = [];
+
+    for (const [sym, q] of Object.entries(newSnapshot)) {
+      const prev = nsePrevSnapshot[sym];
+      if (!prev) continue;
+      const pc    = ((q.price  - prev.price)  / prev.price)  * 100;
+      const vc    = prev.volume > 0 ? ((q.volume - prev.volume) / prev.volume) * 100 : 0;
+      const score = (pc * 0.6) + (vc * 0.4);
+      fnoResults.push({ symbol:sym, price:q.price, priceChange:pc, volumeChange:vc, score, totalVolume:q.volume });
+    }
+
     nsePrevSnapshot = newSnapshot;
-    nseResults      = fnoResults.sort((a, b) => b.score - a.score).slice(0, 5);
+    nseResults      = fnoResults.sort((a,b) => b.score-a.score).slice(0,5);
     nseReady        = fnoResults.length > 0;
     nseLastFetch    = now;
 
-    // ── Indices ──────────────────────────────────────────
-    const idxResults = await fetchYahooIndices();
-    const idxMap     = { "^NSEI": "NIFTY 50", "^NSEBANK": "NIFTY BANK" };
+    // Indices
+    const idxData = await fetchIndices();
     nseIndices = [];
-
-    for (const item of idxResults) {
-      const label = idxMap[item.symbol];
-      if (!label) continue;
-      const q = extractFromSpark(item);
-      if (!q || q.price <= 0) continue;
-
+    for (const [label, q] of Object.entries(idxData)) {
       const prev = nsePrevSnapshot[label];
-      nsePrevSnapshot[label] = { price: q.price, volume: q.volume };
-
+      nsePrevSnapshot[label] = q;
       if (prev) {
         const pc    = ((q.price - prev.price) / prev.price) * 100;
         const vc    = prev.volume > 0 ? ((q.volume - prev.volume) / prev.volume) * 100 : 0;
-        const score = (pc * 0.6) + (vc * 0.4);
-        nseIndices.push({
-          symbol: label, price: q.price,
-          priceChange: pc, volumeChange: vc,
-          score, totalVolume: q.volume,
-          isIndex: true, warming: false
-        });
+        nseIndices.push({ symbol:label, price:q.price, priceChange:pc, volumeChange:vc, score:(pc*0.6)+(vc*0.4), totalVolume:q.volume, isIndex:true, warming:false });
       } else {
-        nseIndices.push({
-          symbol: label, price: q.price,
-          priceChange: 0, volumeChange: 0,
-          score: 0, totalVolume: q.volume,
-          isIndex: true, warming: true
-        });
+        nseIndices.push({ symbol:label, price:q.price, priceChange:0, volumeChange:0, score:0, totalVolume:q.volume, isIndex:true, warming:true });
       }
     }
 
     if (nseReady) {
       console.log(`📈 NSE FNO TOP 5 (${nseTotal} stocks scanned):`);
-      for (const r of nseResults) {
-        console.log(`  ${r.symbol.padEnd(16)} ₹${r.price.toFixed(2)} | Score: ${r.score.toFixed(2)}`);
-      }
+      nseResults.forEach(r => console.log(`  ${r.symbol.padEnd(16)} ₹${r.price.toFixed(2)} | Score: ${r.score.toFixed(2)}`));
     } else {
       console.log(`📈 NSE: ${nseTotal} stocks fetched. Scores ready next tick (5 min).`);
     }
@@ -318,24 +266,13 @@ async function tickNSE() {
 //  API ROUTES
 // ══════════════════════════════════════════════════════════
 app.get("/api/momentum", (req, res) => {
-  res.json({ ok: true, total: cryptoTotal, top5: cryptoResults, ts: cryptoLastFetch });
+  res.json({ ok:true, total:cryptoTotal, top5:cryptoResults, ts:cryptoLastFetch });
 });
-
 app.get("/api/nse", (req, res) => {
-  res.json({
-    ok: true, total: nseTotal,
-    top5: nseResults, indices: nseIndices,
-    ready: nseReady, ts: nseLastFetch
-  });
+  res.json({ ok:true, total:nseTotal, top5:nseResults, indices:nseIndices, ready:nseReady, ts:nseLastFetch });
 });
-
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", uptime: process.uptime() });
-});
-
-app.get("/", (req, res) => {
-  res.json({ name: "QuantSigma Scanner API", endpoints: ["/api/momentum", "/api/nse"] });
-});
+app.get("/health", (req, res) => res.json({ status:"ok", uptime:process.uptime() }));
+app.get("/",       (req, res) => res.json({ name:"QuantSigma Scanner API", endpoints:["/api/momentum","/api/nse"] }));
 
 // ══════════════════════════════════════════════════════════
 //  START
@@ -343,19 +280,15 @@ app.get("/", (req, res) => {
 (async () => {
   console.log("\n🚀 QuantSigma Scanner starting...\n");
 
-  // Crypto — every 10s
   await loadCryptoSymbols();
   await tickCrypto();
   setInterval(tickCrypto, 10 * 1000);
   setInterval(loadCryptoSymbols, 6 * 60 * 60 * 1000);
 
-  // NSE — every 5 minutes
-  // First tick: builds snapshot. Second tick (5 min later): scores appear.
   setTimeout(async () => {
     await tickNSE();
     setInterval(tickNSE, 5 * 60 * 1000);
   }, 5000);
-
 })();
 
 app.listen(PORT, "0.0.0.0", () => {
