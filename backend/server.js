@@ -145,19 +145,31 @@ let nseReady        = false;
 let nseLastFetch    = null;
 
 // Yahoo Finance uses query2 with these headers — works from server IPs
+const UA_LIST = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+];
+function randomUA() { return UA_LIST[Math.floor(Math.random() * UA_LIST.length)]; }
+
+// Single request — all symbols at once, no batching
 async function fetchYahooQuotes(symbols) {
-  // Yahoo v8 finance/spark or use /quote endpoint with proper headers
-  const joined = symbols.map(s => `${s}.NS`).join("%2C");
-  const url = `https://query2.finance.yahoo.com/v8/finance/spark?symbols=${joined}&range=1d&interval=5m`;
+  const joined = symbols.map(s => `${s}.NS`).join(",");
+  const url = `https://query2.finance.yahoo.com/v8/finance/spark?symbols=${encodeURIComponent(joined)}&range=1d&interval=5m`;
   try {
     const { data } = await axios.get(url, {
-      timeout: 20000,
+      timeout: 30000,
       headers: {
-        "User-Agent":      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept":          "*/*",
+        "User-Agent":      randomUA(),
+        "Accept":          "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
-        "Referer":         "https://finance.yahoo.com/",
-        "Origin":          "https://finance.yahoo.com"
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer":         "https://finance.yahoo.com/markets/stocks/most-active/",
+        "Origin":          "https://finance.yahoo.com",
+        "Cache-Control":   "no-cache",
+        "Pragma":          "no-cache"
       }
     });
     return data?.spark?.result || [];
@@ -168,14 +180,14 @@ async function fetchYahooQuotes(symbols) {
 }
 
 async function fetchYahooIndices() {
-  const symbols = ["%5ENSEI", "%5ENSEBANK"]; // ^NSEI, ^NSEBANK URL-encoded
-  const joined  = symbols.join("%2C");
-  const url = `https://query2.finance.yahoo.com/v8/finance/spark?symbols=${joined}&range=1d&interval=5m`;
+  const joined = "^NSEI,^NSEBANK";
+  const url = `https://query2.finance.yahoo.com/v8/finance/spark?symbols=${encodeURIComponent(joined)}&range=1d&interval=5m`;
   try {
     const { data } = await axios.get(url, {
-      timeout: 10000,
+      timeout: 15000,
       headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "User-Agent": randomUA(),
+        "Accept":     "application/json, text/plain, */*",
         "Referer":    "https://finance.yahoo.com/"
       }
     });
@@ -211,16 +223,8 @@ async function tickNSE() {
     console.log("\n📡 NSE: Fetching from Yahoo Finance (spark)...");
     const now = Date.now();
 
-    // Fetch in batches of 50 (Yahoo spark handles ~50 at a time reliably)
-    const BATCH = 50;
-    let allResults = [];
-    for (let i = 0; i < FNO_SYMBOLS.length; i += BATCH) {
-      const batch   = FNO_SYMBOLS.slice(i, i + BATCH);
-      const results = await fetchYahooQuotes(batch);
-      allResults    = allResults.concat(results);
-      // Small delay between batches
-      if (i + BATCH < FNO_SYMBOLS.length) await new Promise(r => setTimeout(r, 500));
-    }
+    // Single request — all symbols at once
+    const allResults = await fetchYahooQuotes(FNO_SYMBOLS);
 
     nseTotal = 0;
     const fnoResults  = [];
