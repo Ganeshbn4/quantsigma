@@ -1,7 +1,7 @@
 // ============================================================
-//  QuantSigma — Scanner Server (Restored Working Version)
-//  Scanner 1 : Crypto Futures (Binance) — every 10s
-//  Scanner 2 : Indian FNO Stocks (NSE) — every 10s
+//  QuantSigma — Scanner Server
+//  Scanner 1 : Crypto Futures (Binance)  — every 10s
+//  Scanner 2 : Indian FNO Stocks (Yahoo Finance) — every 10s
 //  Formula   : Score = PriceChange × 0.6 + VolumeChange × 0.4
 // ============================================================
 
@@ -88,48 +88,73 @@ async function tickCrypto() {
 }
 
 // ══════════════════════════════════════════════════════════
-//  SCANNER 2 — INDIAN FNO STOCKS (NSE)
+//  SCANNER 2 — INDIAN FNO STOCKS (Yahoo Finance)
+//  No cookies, no IP blocking, works from Railway
 // ══════════════════════════════════════════════════════════
-const NSE_FNO_URL = "https://www.nseindia.com/api/equity-stockIndices?index=SECURITIES%20IN%20F%26O";
-const NSE_IDX_URL = "https://www.nseindia.com/api/allIndices";
 
-const NSE_HEADERS = {
-  "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Accept":          "application/json, text/plain, */*",
-  "Accept-Language": "en-US,en;q=0.9",
-  "Accept-Encoding": "gzip, deflate, br",
-  "Referer":         "https://www.nseindia.com/market-data/securities-available-for-trading",
-  "Connection":      "keep-alive",
-  "Cache-Control":   "no-cache",
-};
+// Full NSE FNO stock list (Yahoo Finance uses SYMBOL.NS format)
+const FNO_SYMBOLS = [
+  "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR","SBIN","BHARTIARTL",
+  "ITC","KOTAKBANK","LT","AXISBANK","ASIANPAINT","MARUTI","HCLTECH","SUNPHARMA",
+  "TITAN","ULTRACEMCO","BAJFINANCE","WIPRO","NESTLEIND","POWERGRID","NTPC","TECHM",
+  "ONGC","JSWSTEEL","TATASTEEL","COALINDIA","ADANIPORTS","BAJAJFINSV","DIVISLAB",
+  "DRREDDY","EICHERMOT","GRASIM","HEROMOTOCO","HINDALCO","INDUSINDBK","M&M",
+  "SBILIFE","TATACONSUM","TATAMOTORS","UPL","VEDL","BPCL","CIPLA","GAIL",
+  "HAVELLS","PIDILITIND","SIEMENS","AMBUJACEM","APOLLOHOSP","AUROPHARMA",
+  "BALKRISIND","BANDHANBNK","BANKBARODA","BEL","BERGEPAINT","BHEL","BIOCON",
+  "BOSCHLTD","BRITANNIA","CANBK","CHOLAFIN","COLPAL","CONCOR","COROMANDEL",
+  "CROMPTON","CUB","DABUR","DALBHARAT","DEEPAKNTR","DELTACORP","ESCORTS",
+  "EXIDEIND","FEDERALBNK","GMRINFRA","GNFC","GRANULES","GSPL","HDFCAMC",
+  "HDFCLIFE","HINDCOPPER","HINDPETRO","IBULHSGFIN","ICICIlombard","ICICIGI",
+  "IDFCFIRSTB","IGL","INDHOTEL","INDUSTOWER","INFRATEL","INOXLEISUR","IOC",
+  "IPCALAB","IRCTC","JINDALSTEL","JUBLFOOD","JUSTDIAL","LALPATHLAB","LAURUSLABS",
+  "LICHSGFIN","LUPIN","MANAPPURAM","MARICO","MCDOWELL-N","METROPOLIS",
+  "MFSL","MINDTREE","MOTHERSON","MPHASIS","MRF","MUTHOOTFIN","NATIONALUM",
+  "NAVINFLUOR","NMDC","OBEROIRLTY","OFSS","PEL","PETRONET","PFC","PFIZER",
+  "PHILIPCARB","PNB","POLYCAB","PAGEIND","PERSISTENT","PIIND","PVRINOX",
+  "RAMCOCEM","RBLBANK","RECLTD","SAIL","SCHAEFFLER","SFL","SHREECEM",
+  "SHRIRAMFIN","SONACOMS","STARHEALTH","SYNGENE","TATACHEM","TATACOMM",
+  "TATAELXSI","TATAPOWER","TRENT","TRIDENT","UBL","UJJIVAN","VOLTAS",
+  "WHIRLPOOL","ZEEL","ZYDUSLIFE","ABCAPITAL","ABFRL","ACC","AARTIIND",
+  "ADANIENT","ADANIGREEN","ADANIPOWER","ALKEM","ANGELONE","ASHOKLEY",
+  "ATGL","AUBANK","AWHCL","BAJAJ-AUTO","BATAINDIA","CAMS","CANFINHOME",
+  "CAPLIPOINT","CARBORUNIV","CASTROLIND","CESC","CHAMBLFERT","CLEAN",
+  "CUMMINSIND","CYIENT","DIXON","DLF","DMART","EIDPARRY","EMAMILTD",
+  "ENDURANCE","ENGINERSIN","EQUITAS","ETERNAL","FACT","FINPIPE","FLUOROCHEM",
+  "FORTIS","FSL","GLENMARK","GODREJCP","GODREJPROP","GPPL","GRINDWELL",
+  "HAL","HFCL","HONAUT","HUDCO","ICICIPRULI","IDFC","IEFINDIA","IFCI",
+  "IMFA","INDIAMART","INDIANB","INDIGO","INTELLECT","ISGEC","ITI",
+  "JBCHEPHARM","JINDALPOLY","JKCEMENT","JKLAKSHMI","JKPAPER","JMFINANCIL",
+  "JSWENERGY","JTEKTINDIA","JUBLINGREA","KAJARIACER","KEC","KPITTECH",
+  "KPRMILL","KRBL","KRISHANA","L&TFH","LATENTVIEW","LICI","LINDEINDIA",
+  "LODHA","LTIM","LTTS","LUXIND","MAHABANK","MAHLIFE","MANKIND",
+  "MCX","MEDANTA","METROBRAND","MIDHANI","MMTC","MOTILALOFS","MSSL",
+  "NATCOPHARM","NBCC","NCC","NIACL","NLCINDIA","NUVOCO","OIL","OLECTRA",
+  "OPTIEMUS","ORIENTCEM","PAYTM","PGHH","PNBHOUSING","POLICYBZR",
+  "POLYMED","PRAJIND","PRESTIGE","PRINCEPIPE","PSB","QUESS","RADICO",
+  "RAILTEL","RAJESHEXPO","RITES","ROUTE","SAFARI","SAREGAMA","SCI",
+  "SEQUENT","SHYAMMETL","SJVN","SOBHA","SPARC","SRTRANSFIN","STLTECH",
+  "SUMICHEM","SUPRIYA","SUPREMEIND","SUZLON","SWANENERGY","TANLA",
+  "TATATECH","TCNSBRANDS","TEJASNET","THYROCARE","TIINDIA","TIMKEN",
+  "TORNTPHARM","TORNTPOWER","TTML","TVSHLTD","UCOBANK","UJJIVANSFB",
+  "UNIONBANK","UNOMINDA","USHAMART","UTTAMSUGAR","VAIBHAVGBL","VBL",
+  "VGUARD","VINATIORGA","VIPIND","WELCORP","WELSPUNLIV","WIPRO","ZOMATO"
+];
 
-let nseCookies   = "";
+// Indices to show always
+const NSE_INDICES = [
+  { symbol: "NIFTY 50",   yahoo: "^NSEI"  },
+  { symbol: "NIFTY BANK", yahoo: "^NSEBANK" }
+];
+
 const nseHistory = {};
 let nseResults   = [];
 let nseIndices   = [];
 let nseTotal     = 0;
 let nseReady     = false;
 let nseLastFetch = null;
-let nseFailCount = 0;
 
-async function getNSECookies() {
-  try {
-    const resp = await axios.get("https://www.nseindia.com", {
-      headers: NSE_HEADERS, timeout: 15000, maxRedirects: 5
-    });
-    const raw = resp.headers["set-cookie"];
-    if (raw) {
-      nseCookies   = raw.map(c => c.split(";")[0]).join("; ");
-      nseFailCount = 0;
-      console.log("✅ NSE: Cookies refreshed");
-    }
-  } catch(e) {
-    console.error("NSE cookie error:", e.message);
-    nseCookies = "";
-  }
-}
-
-function computeScore(symbol, price, vol, now) {
+function computeNSEScore(symbol, price, vol, now) {
   if (!nseHistory[symbol]) nseHistory[symbol] = [];
   nseHistory[symbol].push([now, price, vol]);
   nseHistory[symbol] = nseHistory[symbol].filter(x => now - x[0] < WINDOW);
@@ -143,107 +168,117 @@ function computeScore(symbol, price, vol, now) {
   return { pc, vc, score: (pc * 0.6) + (vc * 0.4), newP, newV };
 }
 
-async function tickNSE() {
-  // Back off if too many failures
-  if (nseFailCount >= 5) {
-    console.log("NSE: Too many failures, backing off...");
-    nseLastFetch = Date.now();
-    return;
-  }
-
+// Fetch a batch of Yahoo Finance quotes in one request
+async function fetchYahooBatch(symbols) {
+  // Yahoo supports up to 100 symbols in one call
+  const joined = symbols.map(s => s + ".NS").join(",");
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${joined}&fields=regularMarketPrice,regularMarketVolume,regularMarketChangePercent`;
   try {
-    if (!nseCookies) await getNSECookies();
-    if (!nseCookies) { nseFailCount++; nseLastFetch = Date.now(); return; }
+    const { data } = await axios.get(url, {
+      timeout: 15000,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json"
+      }
+    });
+    return data?.quoteResponse?.result || [];
+  } catch(e) {
+    console.error("Yahoo batch error:", e.message);
+    return [];
+  }
+}
 
+// Fetch Nifty 50 & Bank Nifty from Yahoo
+async function fetchYahooIndices() {
+  try {
+    const joined = NSE_INDICES.map(i => i.yahoo).join(",");
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${joined}&fields=regularMarketPrice,regularMarketVolume,regularMarketChangePercent`;
+    const { data } = await axios.get(url, {
+      timeout: 10000,
+      headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" }
+    });
+    return data?.quoteResponse?.result || [];
+  } catch(e) {
+    console.error("Yahoo indices error:", e.message);
+    return [];
+  }
+}
+
+async function tickNSE() {
+  try {
     const now = Date.now() / 1000;
 
-    // Fetch FNO stocks
-    const { data: fnoData } = await axios.get(NSE_FNO_URL, {
-      headers: { ...NSE_HEADERS, "Cookie": nseCookies },
-      timeout: 15000
-    });
+    // ── Fetch FNO stocks in batches of 100 ──────────────
+    const BATCH = 100;
+    let allQuotes = [];
+    for (let i = 0; i < FNO_SYMBOLS.length; i += BATCH) {
+      const batch = FNO_SYMBOLS.slice(i, i + BATCH);
+      const quotes = await fetchYahooBatch(batch);
+      allQuotes = allQuotes.concat(quotes);
+    }
 
     nseTotal = 0;
     const fnoResults = [];
 
-    if (fnoData && fnoData.data) {
-      for (const stock of fnoData.data) {
-        try {
-          if (!stock.symbol ||
-              stock.symbol.startsWith("NIFTY") ||
-              stock.symbol.startsWith("SENSEX")) continue;
-          const price = parseFloat(stock.lastPrice?.toString().replace(/,/g, "") || 0);
-          const vol   = parseFloat(stock.totalTradedVolume?.toString().replace(/,/g, "") || 0);
-          if (!price || !vol) continue;
-          nseTotal++;
-          const res = computeScore(stock.symbol, price, vol, now);
-          if (!res) continue;
-          fnoResults.push({
-            symbol:       stock.symbol,
-            price:        res.newP,
-            priceChange:  res.pc,
-            volumeChange: res.vc,
-            score:        res.score,
-            totalVolume:  res.newV
-          });
-        } catch(_) {}
-      }
+    for (const q of allQuotes) {
+      try {
+        const rawSym = q.symbol?.replace(".NS", "") || "";
+        if (!rawSym) continue;
+        const price = q.regularMarketPrice;
+        const vol   = q.regularMarketVolume;
+        if (!price || price <= 0) continue;
+        nseTotal++;
+        const res = computeNSEScore(rawSym, price, vol || 0, now);
+        if (!res) continue;
+        fnoResults.push({
+          symbol:       rawSym,
+          price:        res.newP,
+          priceChange:  res.pc,
+          volumeChange: res.vc,
+          score:        res.score,
+          totalVolume:  res.newV
+        });
+      } catch(_) {}
     }
 
     nseResults   = fnoResults.sort((a, b) => b.score - a.score).slice(0, 5);
     nseReady     = fnoResults.length > 0;
     nseLastFetch = Date.now();
-    nseFailCount = 0;
 
-    // Fetch Nifty 50 & Bank Nifty
-    try {
-      const { data: idxData } = await axios.get(NSE_IDX_URL, {
-        headers: { ...NSE_HEADERS, "Cookie": nseCookies },
-        timeout: 10000
-      });
-      nseIndices = [];
-      if (idxData && idxData.data) {
-        const targets = [
-          { key: "NIFTY 50",   label: "NIFTY 50"   },
-          { key: "NIFTY BANK", label: "NIFTY BANK"  }
-        ];
-        for (const target of targets) {
-          const idx   = idxData.data.find(i => i.index === target.key);
-          if (!idx) continue;
-          const price = parseFloat(idx.last || idx.lastPrice || 0);
-          const vol   = parseFloat(idx.totalTradedVolume || 0);
-          if (!price) continue;
-          const res = computeScore(target.label, price, vol, now);
-          if (res) {
-            nseIndices.push({
-              symbol: target.label, price: res.newP,
-              priceChange: res.pc, volumeChange: res.vc,
-              score: res.score, totalVolume: res.newV,
-              isIndex: true, warming: false
-            });
-          } else {
-            nseIndices.push({
-              symbol: target.label, price,
-              priceChange: parseFloat(idx.percentChange || idx.pChange || 0),
-              volumeChange: 0, score: 0, totalVolume: vol,
-              isIndex: true, warming: true
-            });
-          }
-        }
+    // ── Fetch indices ────────────────────────────────────
+    const idxQuotes = await fetchYahooIndices();
+    nseIndices = [];
+    for (const target of NSE_INDICES) {
+      const q = idxQuotes.find(x => x.symbol === target.yahoo);
+      if (!q) continue;
+      const price = q.regularMarketPrice;
+      const vol   = q.regularMarketVolume || 0;
+      if (!price) continue;
+      const res = computeNSEScore(target.symbol, price, vol, now);
+      if (res) {
+        nseIndices.push({
+          symbol: target.symbol, price: res.newP,
+          priceChange: res.pc, volumeChange: res.vc,
+          score: res.score, totalVolume: res.newV,
+          isIndex: true, warming: false
+        });
+      } else {
+        nseIndices.push({
+          symbol: target.symbol, price,
+          priceChange: q.regularMarketChangePercent || 0,
+          volumeChange: 0, score: 0, totalVolume: vol,
+          isIndex: true, warming: true
+        });
       }
-    } catch(e) {
-      console.error("Index fetch error:", e.message);
     }
 
-    console.log(`\n📈 NSE FNO TOP 5 (${nseTotal} stocks):`);
+    console.log(`\n📈 NSE FNO TOP 5 (${nseTotal} stocks via Yahoo):`);
     for (const r of nseResults) {
-      console.log(`  ${r.symbol.padEnd(16)} Price: ${r.priceChange.toFixed(2)}% | Score: ${r.score.toFixed(2)}`);
+      console.log(`  ${r.symbol.padEnd(16)} ₹${r.price.toFixed(2)} | Score: ${r.score.toFixed(2)}`);
     }
 
   } catch(e) {
     console.error("NSE tick error:", e.message);
-    nseFailCount++;
-    nseCookies   = "";
     nseLastFetch = Date.now();
   }
 }
@@ -283,15 +318,10 @@ app.get("/", (req, res) => {
   setInterval(tickCrypto, 10 * 1000);
   setInterval(loadCryptoSymbols, 6 * 60 * 60 * 1000);
 
-  // NSE — every 10 seconds
+  // NSE via Yahoo — every 10 seconds
   setTimeout(async () => {
-    await getNSECookies();
     await tickNSE();
     setInterval(tickNSE, 10 * 1000);
-    setInterval(async () => {
-      nseFailCount = 0;
-      await getNSECookies();
-    }, 30 * 60 * 1000);
   }, 3000);
 
 })();
