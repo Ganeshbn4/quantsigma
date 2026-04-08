@@ -1,32 +1,28 @@
 // ============================================================
-//  QuantSigma — Scanner Server v5.5
+//  QuantSigma — Scanner Server (Restored Working Version)
 //  Scanner 1 : Crypto Futures (Binance) — every 10s
-//  Scanner 2 : Indian FNO (stock-nse-india package) — every 30s
+//  Scanner 2 : Indian FNO Stocks (NSE) — every 10s
 //  Formula   : Score = PriceChange × 0.6 + VolumeChange × 0.4
 // ============================================================
 
-const express    = require("express");
-const axios      = require("axios");
-const cors       = require("cors");
-const { NseIndia } = require("stock-nse-india");
+const express = require("express");
+const axios   = require("axios");
+const cors    = require("cors");
 
-const app    = express();
-const PORT   = process.env.PORT || 3000;
-const nse    = new NseIndia();
+const app  = express();
+const PORT = process.env.PORT || 3000;
 
-// Open CORS
 app.use(cors());
 app.options('*', cors());
 
-// Prevent crash
 process.on('uncaughtException',  e => console.error('Uncaught:', e.message));
 process.on('unhandledRejection', e => console.error('Rejection:', e?.message || e));
 
 // ══════════════════════════════════════════════════════════
 //  SCANNER 1 — CRYPTO FUTURES (Binance)
 // ══════════════════════════════════════════════════════════
-const BAPI    = "https://fapi.binance.com";
-const WINDOW  = 300;
+const BAPI   = "https://fapi.binance.com";
+const WINDOW = 300;
 
 const cryptoHistory = {};
 let cryptoSymbols   = new Set();
@@ -92,31 +88,46 @@ async function tickCrypto() {
 }
 
 // ══════════════════════════════════════════════════════════
-//  SCANNER 2 — INDIAN FNO (stock-nse-india package)
-//  This package handles NSE cookies automatically
-//  Works from any server IP including European Railway servers
+//  SCANNER 2 — INDIAN FNO STOCKS (NSE)
 // ══════════════════════════════════════════════════════════
+const NSE_FNO_URL = "https://www.nseindia.com/api/equity-stockIndices?index=SECURITIES%20IN%20F%26O";
+const NSE_IDX_URL = "https://www.nseindia.com/api/allIndices";
 
-// Top 50 liquid FNO stocks
-const FNO_STOCKS = [
-  "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK",
-  "ITC","SBIN","BHARTIARTL","KOTAKBANK","LT",
-  "AXISBANK","TATAMOTORS","WIPRO","HCLTECH","SUNPHARMA",
-  "BAJFINANCE","TITAN","MARUTI","ASIANPAINT","ULTRACEMCO",
-  "NTPC","POWERGRID","ONGC","TATASTEEL","JSWSTEEL",
-  "HINDALCO","COALINDIA","BPCL","DRREDDY","CIPLA",
-  "DIVISLAB","EICHERMOT","HEROMOTOCO","BAJAJFINSV","BRITANNIA",
-  "GRASIM","INDUSINDBK","M&M","SBILIFE","HDFCLIFE",
-  "APOLLOHOSP","TATACONSUM","LTIM","ADANIENT","ADANIPORTS",
-  "ZOMATO","NAUKRI","IRCTC","DLF","VEDL"
-];
+const NSE_HEADERS = {
+  "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept":          "application/json, text/plain, */*",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Referer":         "https://www.nseindia.com/market-data/securities-available-for-trading",
+  "Connection":      "keep-alive",
+  "Cache-Control":   "no-cache",
+};
 
+let nseCookies   = "";
 const nseHistory = {};
 let nseResults   = [];
 let nseIndices   = [];
 let nseTotal     = 0;
 let nseReady     = false;
 let nseLastFetch = null;
+let nseFailCount = 0;
+
+async function getNSECookies() {
+  try {
+    const resp = await axios.get("https://www.nseindia.com", {
+      headers: NSE_HEADERS, timeout: 15000, maxRedirects: 5
+    });
+    const raw = resp.headers["set-cookie"];
+    if (raw) {
+      nseCookies   = raw.map(c => c.split(";")[0]).join("; ");
+      nseFailCount = 0;
+      console.log("✅ NSE: Cookies refreshed");
+    }
+  } catch(e) {
+    console.error("NSE cookie error:", e.message);
+    nseCookies = "";
+  }
+}
 
 function computeScore(symbol, price, vol, now) {
   if (!nseHistory[symbol]) nseHistory[symbol] = [];
@@ -133,84 +144,106 @@ function computeScore(symbol, price, vol, now) {
 }
 
 async function tickNSE() {
-  try {
-    const now      = Date.now() / 1000;
-    const fnoResults = [];
-    nseTotal = 0;
+  // Back off if too many failures
+  if (nseFailCount >= 5) {
+    console.log("NSE: Too many failures, backing off...");
+    nseLastFetch = Date.now();
+    return;
+  }
 
-    // Fetch each stock using stock-nse-india package
-    // Stagger requests to avoid rate limiting
-    for (const symbol of FNO_STOCKS) {
-      try {
-        const details = await nse.getEquityDetails(symbol);
-        const price   = parseFloat(details?.priceInfo?.lastPrice || 0);
-        const vol     = parseFloat(details?.securityInfo?.totalTradedVolume || 0);
-        if (!price) continue;
-        nseTotal++;
-        const res = computeScore(symbol, price, vol, now);
-        if (!res) continue;
-        fnoResults.push({
-          symbol,
-          price:        res.newP,
-          priceChange:  res.pc,
-          volumeChange: res.vc,
-          score:        res.score,
-          totalVolume:  res.newV
-        });
-      } catch(_) {
-        // Skip failed symbol silently
+  try {
+    if (!nseCookies) await getNSECookies();
+    if (!nseCookies) { nseFailCount++; nseLastFetch = Date.now(); return; }
+
+    const now = Date.now() / 1000;
+
+    // Fetch FNO stocks
+    const { data: fnoData } = await axios.get(NSE_FNO_URL, {
+      headers: { ...NSE_HEADERS, "Cookie": nseCookies },
+      timeout: 15000
+    });
+
+    nseTotal = 0;
+    const fnoResults = [];
+
+    if (fnoData && fnoData.data) {
+      for (const stock of fnoData.data) {
+        try {
+          if (!stock.symbol ||
+              stock.symbol.startsWith("NIFTY") ||
+              stock.symbol.startsWith("SENSEX")) continue;
+          const price = parseFloat(stock.lastPrice?.toString().replace(/,/g, "") || 0);
+          const vol   = parseFloat(stock.totalTradedVolume?.toString().replace(/,/g, "") || 0);
+          if (!price || !vol) continue;
+          nseTotal++;
+          const res = computeScore(stock.symbol, price, vol, now);
+          if (!res) continue;
+          fnoResults.push({
+            symbol:       stock.symbol,
+            price:        res.newP,
+            priceChange:  res.pc,
+            volumeChange: res.vc,
+            score:        res.score,
+            totalVolume:  res.newV
+          });
+        } catch(_) {}
       }
-      // Small delay between requests
-      await new Promise(r => setTimeout(r, 100));
     }
 
     nseResults   = fnoResults.sort((a, b) => b.score - a.score).slice(0, 5);
     nseReady     = fnoResults.length > 0;
     nseLastFetch = Date.now();
-    nseTotal     = fnoResults.length;
+    nseFailCount = 0;
 
     // Fetch Nifty 50 & Bank Nifty
     try {
-      const indices = [
-        { method: "NIFTY 50",   label: "NIFTY 50"   },
-        { method: "NIFTY BANK", label: "NIFTY BANK"  }
-      ];
+      const { data: idxData } = await axios.get(NSE_IDX_URL, {
+        headers: { ...NSE_HEADERS, "Cookie": nseCookies },
+        timeout: 10000
+      });
       nseIndices = [];
-      for (const idx of indices) {
-        try {
-          const data  = await nse.getIndexDetails(idx.method);
-          const price = parseFloat(data?.data?.[0]?.last || 0);
-          const vol   = parseFloat(data?.data?.[0]?.totalTradedVolume || 0);
+      if (idxData && idxData.data) {
+        const targets = [
+          { key: "NIFTY 50",   label: "NIFTY 50"   },
+          { key: "NIFTY BANK", label: "NIFTY BANK"  }
+        ];
+        for (const target of targets) {
+          const idx   = idxData.data.find(i => i.index === target.key);
+          if (!idx) continue;
+          const price = parseFloat(idx.last || idx.lastPrice || 0);
+          const vol   = parseFloat(idx.totalTradedVolume || 0);
           if (!price) continue;
-          const res = computeScore(idx.label, price, vol, now);
+          const res = computeScore(target.label, price, vol, now);
           if (res) {
             nseIndices.push({
-              symbol: idx.label, price: res.newP,
+              symbol: target.label, price: res.newP,
               priceChange: res.pc, volumeChange: res.vc,
               score: res.score, totalVolume: res.newV,
               isIndex: true, warming: false
             });
           } else {
             nseIndices.push({
-              symbol: idx.label, price,
-              priceChange: parseFloat(data?.data?.[0]?.percentChange || 0),
+              symbol: target.label, price,
+              priceChange: parseFloat(idx.percentChange || idx.pChange || 0),
               volumeChange: 0, score: 0, totalVolume: vol,
               isIndex: true, warming: true
             });
           }
-        } catch(_) {}
+        }
       }
     } catch(e) {
       console.error("Index fetch error:", e.message);
     }
 
-    console.log(`\n📈 NSE TOP 5 (${nseTotal} stocks):`);
+    console.log(`\n📈 NSE FNO TOP 5 (${nseTotal} stocks):`);
     for (const r of nseResults) {
-      console.log(`  ${r.symbol.padEnd(14)} Price: ${r.priceChange.toFixed(2)}% | Score: ${r.score.toFixed(2)}`);
+      console.log(`  ${r.symbol.padEnd(16)} Price: ${r.priceChange.toFixed(2)}% | Score: ${r.score.toFixed(2)}`);
     }
 
   } catch(e) {
     console.error("NSE tick error:", e.message);
+    nseFailCount++;
+    nseCookies   = "";
     nseLastFetch = Date.now();
   }
 }
@@ -235,14 +268,14 @@ app.get("/health", (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  res.json({ name: "QuantSigma API v5.5", endpoints: ["/api/momentum", "/api/nse"] });
+  res.json({ name: "QuantSigma Scanner API", endpoints: ["/api/momentum", "/api/nse"] });
 });
 
 // ══════════════════════════════════════════════════════════
 //  START
 // ══════════════════════════════════════════════════════════
 (async () => {
-  console.log("\n🚀 QuantSigma Scanner v5.5 starting...\n");
+  console.log("\n🚀 QuantSigma Scanner starting...\n");
 
   // Crypto — every 10 seconds
   await loadCryptoSymbols();
@@ -250,11 +283,16 @@ app.get("/", (req, res) => {
   setInterval(tickCrypto, 10 * 1000);
   setInterval(loadCryptoSymbols, 6 * 60 * 60 * 1000);
 
-  // NSE — every 30 seconds
+  // NSE — every 10 seconds
   setTimeout(async () => {
+    await getNSECookies();
     await tickNSE();
-    setInterval(tickNSE, 30 * 1000);
-  }, 5000);
+    setInterval(tickNSE, 10 * 1000);
+    setInterval(async () => {
+      nseFailCount = 0;
+      await getNSECookies();
+    }, 30 * 60 * 1000);
+  }, 3000);
 
 })();
 
