@@ -1,31 +1,32 @@
 // ============================================================
-//  QuantSigma — Scanner Server v5.4
+//  QuantSigma — Scanner Server v5.5
 //  Scanner 1 : Crypto Futures (Binance) — every 10s
-//  Scanner 2 : Indian FNO Top 50 (Yahoo Finance) — every 30s
+//  Scanner 2 : Indian FNO (stock-nse-india package) — every 30s
 //  Formula   : Score = PriceChange × 0.6 + VolumeChange × 0.4
 // ============================================================
 
-const express = require("express");
-const axios   = require("axios");
-const cors    = require("cors");
+const express    = require("express");
+const axios      = require("axios");
+const cors       = require("cors");
+const { NseIndia } = require("stock-nse-india");
 
-const app  = express();
-const PORT = process.env.PORT || 3000;
+const app    = express();
+const PORT   = process.env.PORT || 3000;
+const nse    = new NseIndia();
 
 // Open CORS
 app.use(cors());
 app.options('*', cors());
 
-// Prevent crash on unhandled errors
+// Prevent crash
 process.on('uncaughtException',  e => console.error('Uncaught:', e.message));
 process.on('unhandledRejection', e => console.error('Rejection:', e?.message || e));
 
 // ══════════════════════════════════════════════════════════
 //  SCANNER 1 — CRYPTO FUTURES (Binance)
 // ══════════════════════════════════════════════════════════
-const BAPI        = "https://fapi.binance.com";
-const WINDOW      = 300; // 5-min rolling
-const CRYPTO_INT  = 10;  // seconds
+const BAPI    = "https://fapi.binance.com";
+const WINDOW  = 300;
 
 const cryptoHistory = {};
 let cryptoSymbols   = new Set();
@@ -91,38 +92,24 @@ async function tickCrypto() {
 }
 
 // ══════════════════════════════════════════════════════════
-//  SCANNER 2 — INDIAN FNO TOP 50 (Yahoo Finance)
-//  Light version — top 50 liquid FNO stocks + 2 indices
-//  Runs every 30 seconds to stay within memory limits
+//  SCANNER 2 — INDIAN FNO (stock-nse-india package)
+//  This package handles NSE cookies automatically
+//  Works from any server IP including European Railway servers
 // ══════════════════════════════════════════════════════════
 
-// Top 50 most liquid NSE FNO stocks
-const FNO_SYMBOLS = [
-  "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK",
-  "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK", "LT",
-  "AXISBANK", "TATAMOTORS", "WIPRO", "HCLTECH", "SUNPHARMA",
-  "BAJFINANCE", "TITAN", "MARUTI", "ASIANPAINT", "ULTRACEMCO",
-  "NTPC", "POWERGRID", "ONGC", "TATASTEEL", "JSWSTEEL",
-  "HINDALCO", "COALINDIA", "BPCL", "DRREDDY", "CIPLA",
-  "DIVISLAB", "EICHERMOT", "HEROMOTOCO", "BAJAJFINSV", "BRITANNIA",
-  "GRASIM", "INDUSINDBK", "M&M", "SBILIFE", "HDFCLIFE",
-  "APOLLOHOSP", "TATACONSUM", "LTIM", "ADANIENT", "ADANIPORTS",
-  "ZOMATO", "NAUKRI", "IRCTC", "DLF", "VEDL"
-].map(s => s + ".NS");
-
-// Nifty 50 and Bank Nifty
-const INDEX_SYMBOLS = [
-  { yahoo: "^NSEI",    label: "NIFTY 50"   },
-  { yahoo: "^NSEBANK", label: "NIFTY BANK"  }
+// Top 50 liquid FNO stocks
+const FNO_STOCKS = [
+  "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK",
+  "ITC","SBIN","BHARTIARTL","KOTAKBANK","LT",
+  "AXISBANK","TATAMOTORS","WIPRO","HCLTECH","SUNPHARMA",
+  "BAJFINANCE","TITAN","MARUTI","ASIANPAINT","ULTRACEMCO",
+  "NTPC","POWERGRID","ONGC","TATASTEEL","JSWSTEEL",
+  "HINDALCO","COALINDIA","BPCL","DRREDDY","CIPLA",
+  "DIVISLAB","EICHERMOT","HEROMOTOCO","BAJAJFINSV","BRITANNIA",
+  "GRASIM","INDUSINDBK","M&M","SBILIFE","HDFCLIFE",
+  "APOLLOHOSP","TATACONSUM","LTIM","ADANIENT","ADANIPORTS",
+  "ZOMATO","NAUKRI","IRCTC","DLF","VEDL"
 ];
-
-// All symbols to fetch in one call
-const ALL_SYMBOLS = [...FNO_SYMBOLS, ...INDEX_SYMBOLS.map(i => i.yahoo)];
-
-const YAHOO_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Accept":     "application/json"
-};
 
 const nseHistory = {};
 let nseResults   = [];
@@ -147,36 +134,17 @@ function computeScore(symbol, price, vol, now) {
 
 async function tickNSE() {
   try {
-    const now = Date.now() / 1000;
-
-    // Fetch all symbols in ONE single API call — lightweight
-    const joined = ALL_SYMBOLS.join(",");
-    const url    = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(joined)}&fields=regularMarketPrice,regularMarketVolume,regularMarketChangePercent`;
-
-    const { data } = await axios.get(url, {
-      headers: YAHOO_HEADERS,
-      timeout: 20000
-    });
-
-    const quotes = data?.quoteResponse?.result || [];
-    if (!quotes.length) {
-      console.log("NSE: No data from Yahoo Finance");
-      nseLastFetch = Date.now();
-      return;
-    }
-
-    // ── Process FNO stocks ────────────────────────────────
+    const now      = Date.now() / 1000;
     const fnoResults = [];
     nseTotal = 0;
 
-    for (const q of quotes) {
-      // Skip index symbols
-      if (q.symbol.startsWith("^")) continue;
-
+    // Fetch each stock using stock-nse-india package
+    // Stagger requests to avoid rate limiting
+    for (const symbol of FNO_STOCKS) {
       try {
-        const symbol = q.symbol.replace(".NS", "");
-        const price  = parseFloat(q.regularMarketPrice || 0);
-        const vol    = parseFloat(q.regularMarketVolume || 0);
+        const details = await nse.getEquityDetails(symbol);
+        const price   = parseFloat(details?.priceInfo?.lastPrice || 0);
+        const vol     = parseFloat(details?.securityInfo?.totalTradedVolume || 0);
         if (!price) continue;
         nseTotal++;
         const res = computeScore(symbol, price, vol, now);
@@ -189,53 +157,56 @@ async function tickNSE() {
           score:        res.score,
           totalVolume:  res.newV
         });
-      } catch(_) {}
+      } catch(_) {
+        // Skip failed symbol silently
+      }
+      // Small delay between requests
+      await new Promise(r => setTimeout(r, 100));
     }
 
     nseResults   = fnoResults.sort((a, b) => b.score - a.score).slice(0, 5);
     nseReady     = fnoResults.length > 0;
     nseLastFetch = Date.now();
+    nseTotal     = fnoResults.length;
 
-    // ── Process Indices ───────────────────────────────────
-    nseIndices = [];
-    for (const target of INDEX_SYMBOLS) {
-      const q = quotes.find(x => x.symbol === target.yahoo);
-      if (!q) continue;
-      const price = parseFloat(q.regularMarketPrice || 0);
-      const vol   = parseFloat(q.regularMarketVolume || 0);
-      if (!price) continue;
-      const res = computeScore(target.label, price, vol, now);
-      if (res) {
-        nseIndices.push({
-          symbol:       target.label,
-          price:        res.newP,
-          priceChange:  res.pc,
-          volumeChange: res.vc,
-          score:        res.score,
-          totalVolume:  res.newV,
-          isIndex:      true,
-          warming:      false
-        });
-      } else {
-        nseIndices.push({
-          symbol:       target.label,
-          price,
-          priceChange:  parseFloat(q.regularMarketChangePercent || 0),
-          volumeChange: 0,
-          score:        0,
-          totalVolume:  vol,
-          isIndex:      true,
-          warming:      true
-        });
+    // Fetch Nifty 50 & Bank Nifty
+    try {
+      const indices = [
+        { method: "NIFTY 50",   label: "NIFTY 50"   },
+        { method: "NIFTY BANK", label: "NIFTY BANK"  }
+      ];
+      nseIndices = [];
+      for (const idx of indices) {
+        try {
+          const data  = await nse.getIndexDetails(idx.method);
+          const price = parseFloat(data?.data?.[0]?.last || 0);
+          const vol   = parseFloat(data?.data?.[0]?.totalTradedVolume || 0);
+          if (!price) continue;
+          const res = computeScore(idx.label, price, vol, now);
+          if (res) {
+            nseIndices.push({
+              symbol: idx.label, price: res.newP,
+              priceChange: res.pc, volumeChange: res.vc,
+              score: res.score, totalVolume: res.newV,
+              isIndex: true, warming: false
+            });
+          } else {
+            nseIndices.push({
+              symbol: idx.label, price,
+              priceChange: parseFloat(data?.data?.[0]?.percentChange || 0),
+              volumeChange: 0, score: 0, totalVolume: vol,
+              isIndex: true, warming: true
+            });
+          }
+        } catch(_) {}
       }
+    } catch(e) {
+      console.error("Index fetch error:", e.message);
     }
 
-    console.log(`\n📈 NSE TOP 5 (${nseTotal} stocks scanned):`);
+    console.log(`\n📈 NSE TOP 5 (${nseTotal} stocks):`);
     for (const r of nseResults) {
       console.log(`  ${r.symbol.padEnd(14)} Price: ${r.priceChange.toFixed(2)}% | Score: ${r.score.toFixed(2)}`);
-    }
-    if (nseIndices.length) {
-      console.log(`📊 ${nseIndices.map(i => `${i.symbol}: ${i.priceChange.toFixed(2)}%`).join(" | ")}`);
     }
 
   } catch(e) {
@@ -253,12 +224,9 @@ app.get("/api/momentum", (req, res) => {
 
 app.get("/api/nse", (req, res) => {
   res.json({
-    ok:      true,
-    total:   nseTotal,
-    top5:    nseResults,
-    indices: nseIndices,
-    ready:   nseReady,
-    ts:      nseLastFetch
+    ok: true, total: nseTotal,
+    top5: nseResults, indices: nseIndices,
+    ready: nseReady, ts: nseLastFetch
   });
 });
 
@@ -267,25 +235,22 @@ app.get("/health", (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  res.json({
-    name:      "QuantSigma API v5.4",
-    endpoints: ["/api/momentum", "/api/nse", "/health"]
-  });
+  res.json({ name: "QuantSigma API v5.5", endpoints: ["/api/momentum", "/api/nse"] });
 });
 
 // ══════════════════════════════════════════════════════════
 //  START
 // ══════════════════════════════════════════════════════════
 (async () => {
-  console.log("\n🚀 QuantSigma Scanner v5.4 starting...\n");
+  console.log("\n🚀 QuantSigma Scanner v5.5 starting...\n");
 
   // Crypto — every 10 seconds
   await loadCryptoSymbols();
   await tickCrypto();
-  setInterval(tickCrypto, CRYPTO_INT * 1000);
+  setInterval(tickCrypto, 10 * 1000);
   setInterval(loadCryptoSymbols, 6 * 60 * 60 * 1000);
 
-  // NSE via Yahoo Finance — every 30 seconds (lightweight)
+  // NSE — every 30 seconds
   setTimeout(async () => {
     await tickNSE();
     setInterval(tickNSE, 30 * 1000);
@@ -295,6 +260,6 @@ app.get("/", (req, res) => {
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`\n✅ Server running on port ${PORT}`);
-  console.log(`📡 Crypto  → /api/momentum (every 10s)`);
-  console.log(`📈 NSE FNO → /api/nse     (every 30s via Yahoo Finance)\n`);
+  console.log(`📡 Crypto  → /api/momentum`);
+  console.log(`📈 NSE FNO → /api/nse\n`);
 });
