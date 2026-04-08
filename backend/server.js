@@ -1,6 +1,9 @@
 // ============================================================
-//  QuantSigma — Scanner Server v5.2
-//  Crash protected — handles NSE 403 gracefully
+//  QuantSigma — Scanner Server v5.3
+//  Scanner 1 : Crypto Futures (Binance)
+//  Scanner 2 : Indian FNO Stocks via Yahoo Finance
+//              Yahoo Finance works from any server IP
+//  Formula   : Score = PriceChange × 0.6 + VolumeChange × 0.4
 // ============================================================
 
 const express = require("express");
@@ -14,13 +17,9 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.options('*', cors());
 
-// ── Prevent server crash on unhandled errors ──────────────
-process.on('uncaughtException', (e) => {
-  console.error('Uncaught Exception (server kept alive):', e.message);
-});
-process.on('unhandledRejection', (e) => {
-  console.error('Unhandled Rejection (server kept alive):', e?.message || e);
-});
+// Prevent server crash
+process.on('uncaughtException',  e => console.error('Uncaught:', e.message));
+process.on('unhandledRejection', e => console.error('Rejection:', e?.message || e));
 
 // ══════════════════════════════════════════════════════════
 //  SCANNER 1 — CRYPTO FUTURES (Binance)
@@ -58,7 +57,6 @@ async function tickCrypto() {
   try {
     const now = Date.now() / 1000;
     const { data } = await axios.get(`${BAPI}/fapi/v1/ticker/24hr`, { timeout: 10000 });
-
     cryptoTotal = 0;
     for (const coin of data) {
       if (!cryptoSymbols.has(coin.symbol)) continue;
@@ -70,7 +68,6 @@ async function tickCrypto() {
       cryptoHistory[coin.symbol].push([now, price, vol]);
       cryptoHistory[coin.symbol] = cryptoHistory[coin.symbol].filter(x => now - x[0] < WINDOW);
     }
-
     const results = [];
     for (const symbol of Object.keys(cryptoHistory)) {
       const h = cryptoHistory[symbol];
@@ -83,60 +80,86 @@ async function tickCrypto() {
       const score = (pc * 0.6) + (vc * 0.4);
       results.push({ symbol, price: newP, priceChange: pc, volumeChange: vc, score, qVol: newV });
     }
-
     cryptoResults   = results.sort((a, b) => b.score - a.score).slice(0, 5);
     cryptoLastFetch = Date.now();
-
     console.log("\n🔥 CRYPTO TOP 5:");
     for (const r of cryptoResults) {
       console.log(`  ${r.symbol.padEnd(14)} Price: ${r.priceChange.toFixed(2)}% | Score: ${r.score.toFixed(2)}`);
     }
   } catch(e) {
     console.error("Crypto tick error:", e.message);
-    // Don't crash — just skip this tick
   }
 }
 
 // ══════════════════════════════════════════════════════════
-//  SCANNER 2 — INDIAN FNO STOCKS + INDICES (NSE)
+//  SCANNER 2 — INDIAN FNO STOCKS (Yahoo Finance)
+//  Yahoo Finance NSE symbols use .NS suffix
+//  e.g. RELIANCE.NS, HDFCBANK.NS, NIFTY50.NS
 // ══════════════════════════════════════════════════════════
-const NSE_FNO_URL = "https://www.nseindia.com/api/equity-stockIndices?index=SECURITIES%20IN%20F%26O";
-const NSE_IDX_URL = "https://www.nseindia.com/api/allIndices";
 
-const NSE_HEADERS = {
-  "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Accept":          "application/json, text/plain, */*",
-  "Accept-Language": "en-US,en;q=0.9",
-  "Accept-Encoding": "gzip, deflate, br",
-  "Referer":         "https://www.nseindia.com/market-data/securities-available-for-trading",
-  "Connection":      "keep-alive",
-  "Cache-Control":   "no-cache",
+// Complete NSE FNO stock list with Yahoo Finance symbols
+const FNO_SYMBOLS = [
+  "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR","ITC",
+  "SBIN","BHARTIARTL","KOTAKBANK","LT","AXISBANK","ASIANPAINT","MARUTI",
+  "TITAN","ULTRACEMCO","SUNPHARMA","BAJFINANCE","TATAMOTORS","WIPRO",
+  "HCLTECH","POWERGRID","NTPC","ADANIENT","ADANIPORTS","TECHM","NESTLEIND",
+  "ONGC","JSWSTEEL","TATASTEEL","HINDALCO","COALINDIA","BPCL","IOC",
+  "DRREDDY","CIPLA","DIVISLAB","EICHERMOT","HEROMOTOCO","BAJAJFINSV",
+  "BAJAJ-AUTO","BRITANNIA","GRASIM","INDUSINDBK","M&M","SBILIFE",
+  "HDFCLIFE","APOLLOHOSP","TATACONSUM","LTIM","PERSISTENT","MPHASIS",
+  "COFORGE","LTTS","OFSS","HDFCAMC","PIDILITIND","DABUR","MARICO",
+  "GODREJCP","COLPAL","EMAMILTD","TATACOMM","DLF","PRESTIGE","OBEROIRLTY",
+  "PHOENIXLTD","SOBHA","GODREJPROP","BRIGADE","IDFCFIRSTB","FEDERALBNK",
+  "BANDHANBNK","CANBK","PNB","BANKBARODA","UNIONBANK","MAHABANK",
+  "RBLBANK","KARURVYSYA","DCBBANK","UJJIVANSFB","AUBANK","EQUITASBNK",
+  "CHOLAFIN","MUTHOOTFIN","MANAPPURAM","M&MFIN","SHRIRAMFIN","LICHSGFIN",
+  "RECLTD","PFC","IRFC","HUDCO","IIFL","ANGELONE","CDSL","BSE","MCX",
+  "NYKAA","ZOMATO","PAYTM","POLICYBZR","DELHIVERY","MAPMYINDIA",
+  "IRCTC","RVNL","IRCON","RAILVIKAS","TITAGARH","TEXRAIL",
+  "AUROPHARMA","ALKEM","LUPIN","IPCALAB","GLENMARK","GRANULES",
+  "NATCOPHARM","AJANTPHARM","SANOFI","PFIZER","ABBOTINDIA","GLAXO",
+  "BIOCON","LAURUSLABS","DIVIS","TORNTPHARM","JBCHEPHARM","GLAND",
+  "CONCOR","ADANIGREEN","ADANITRANS","ADANIPOWER","TATAPOWER","CESC",
+  "TORNTPOWER","NHPC","SJVN","GMRINFRA","NAVINFLUOR","DEEPAKNTR",
+  "AARTIIND","VINDHYATEL","GUJGASLTD","MGL","IGL","PETRONET","GSPL",
+  "CHAMBLFERT","COROMANDEL","PIIND","UPL","RALLIS","DHANUKA","ASTRAL",
+  "SUPREMEIND","ATUL","SRF","GARFIBRES","BALKRISIND","MRF","CEATLTD",
+  "APOLLOTYRE","JKTYRE","MOTHERSON","BOSCHLTD","SCHAEFFLER","TIMKEN",
+  "SKFINDIA","GRINDWELL","CARBORUNIV","CUMMINSIND","THERMAX","ABB",
+  "SIEMENS","HAVELLS","VOLTAS","BLUESTARCO","WHIRLPOOL","CROMPTON",
+  "ORIENTELEC","POLYCAB","KEI","FINOLEX","SCHNEIDER","CGPOWER","BHEL",
+  "BEL","HAL","BEML","MTAR","PARAS","ZYDUSLIFE","STAR","NAUKRI",
+  "INDHOTEL","LEMONTRE","CHALET","EIH","MAHINDRA","TRENT","VEDL",
+  "HINDZINC","NATIONALUM","SAIL","NMDC","MOIL","GMMPFAUDLR"
+].map(s => s + ".NS");
+
+// Index symbols
+const INDEX_SYMBOLS = [
+  { yahoo: "^NSEI",   label: "NIFTY 50"  },
+  { yahoo: "^NSEBANK",label: "NIFTY BANK"}
+];
+
+const YAHOO_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+  "Accept":     "application/json"
 };
 
-let nseCookies   = "";
 const nseHistory = {};
 let nseResults   = [];
 let nseIndices   = [];
 let nseTotal     = 0;
 let nseReady     = false;
 let nseLastFetch = null;
-let nseFailCount = 0; // track consecutive failures
 
-async function getNSECookies() {
-  try {
-    const resp = await axios.get("https://www.nseindia.com", {
-      headers: NSE_HEADERS, timeout: 15000, maxRedirects: 5
-    });
-    const raw = resp.headers["set-cookie"];
-    if (raw) {
-      nseCookies = raw.map(c => c.split(";")[0]).join("; ");
-      console.log("✅ NSE: Cookies refreshed");
-      nseFailCount = 0; // reset on success
-    }
-  } catch(e) {
-    console.error("NSE cookie error:", e.message);
-    nseCookies = "";
-  }
+// Fetch a batch of symbols from Yahoo Finance
+async function fetchYahooBatch(symbols) {
+  const joined = symbols.join(",");
+  const url    = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(joined)}&fields=regularMarketPrice,regularMarketVolume,regularMarketChangePercent`;
+  const { data } = await axios.get(url, {
+    headers: YAHOO_HEADERS,
+    timeout: 15000
+  });
+  return data?.quoteResponse?.result || [];
 }
 
 function computeScore(symbol, price, vol, now) {
@@ -154,114 +177,93 @@ function computeScore(symbol, price, vol, now) {
 }
 
 async function tickNSE() {
-  // If too many consecutive failures, back off
-  if (nseFailCount >= 5) {
-    console.log("NSE: Too many failures, waiting for next cookie refresh...");
-    nseLastFetch = Date.now();
-    return;
-  }
-
   try {
-    if (!nseCookies) await getNSECookies();
-    if (!nseCookies) {
-      nseFailCount++;
-      nseLastFetch = Date.now();
-      return;
-    }
-
     const now = Date.now() / 1000;
 
-    // ── Fetch FNO stocks ──────────────────────────────
-    const { data: fnoData } = await axios.get(NSE_FNO_URL, {
-      headers: { ...NSE_HEADERS, "Cookie": nseCookies },
-      timeout: 15000
-    });
-
-    nseTotal = 0;
+    // ── Fetch FNO stocks in batches of 50 ────────────────
+    const BATCH = 50;
     const fnoResults = [];
+    nseTotal = 0;
 
-    if (fnoData && fnoData.data) {
-      for (const stock of fnoData.data) {
-        try {
-          if (!stock.symbol ||
-              stock.symbol.startsWith("NIFTY") ||
-              stock.symbol.startsWith("SENSEX")) continue;
-          const price = parseFloat(stock.lastPrice?.toString().replace(/,/g, "") || 0);
-          const vol   = parseFloat(stock.totalTradedVolume?.toString().replace(/,/g, "") || 0);
-          if (!price || !vol) continue;
-          nseTotal++;
-          const res = computeScore(stock.symbol, price, vol, now);
-          if (!res) continue;
-          fnoResults.push({
-            symbol:       stock.symbol,
-            price:        res.newP,
-            priceChange:  res.pc,
-            volumeChange: res.vc,
-            score:        res.score,
-            totalVolume:  res.newV
-          });
-        } catch(_) {}
+    for (let i = 0; i < FNO_SYMBOLS.length; i += BATCH) {
+      const batch = FNO_SYMBOLS.slice(i, i + BATCH);
+      try {
+        const quotes = await fetchYahooBatch(batch);
+        for (const q of quotes) {
+          try {
+            const symbol = q.symbol.replace(".NS", "");
+            const price  = parseFloat(q.regularMarketPrice || 0);
+            const vol    = parseFloat(q.regularMarketVolume || 0);
+            if (!price) continue;
+            nseTotal++;
+            const res = computeScore(symbol, price, vol, now);
+            if (!res) continue;
+            fnoResults.push({
+              symbol,
+              price:        res.newP,
+              priceChange:  res.pc,
+              volumeChange: res.vc,
+              score:        res.score,
+              totalVolume:  res.newV
+            });
+          } catch(_) {}
+        }
+        // Small delay between batches to avoid rate limiting
+        if (i + BATCH < FNO_SYMBOLS.length) {
+          await new Promise(r => setTimeout(r, 200));
+        }
+      } catch(e) {
+        console.error(`Yahoo batch error (${i}):`, e.message);
       }
     }
 
     nseResults   = fnoResults.sort((a, b) => b.score - a.score).slice(0, 5);
     nseReady     = fnoResults.length > 0;
     nseLastFetch = Date.now();
-    nseFailCount = 0; // reset on success
+    nseTotal     = fnoResults.length;
 
-    // ── Fetch Nifty 50 & Bank Nifty ──────────────────
+    // ── Fetch Nifty 50 & Bank Nifty ──────────────────────
     try {
-      const { data: idxData } = await axios.get(NSE_IDX_URL, {
-        headers: { ...NSE_HEADERS, "Cookie": nseCookies },
-        timeout: 10000
-      });
-
+      const idxQuotes = await fetchYahooBatch(INDEX_SYMBOLS.map(i => i.yahoo));
       nseIndices = [];
-      if (idxData && idxData.data) {
-        const targets = [
-          { key: "NIFTY 50",   label: "NIFTY 50"  },
-          { key: "NIFTY BANK", label: "NIFTY BANK" }
-        ];
-        for (const target of targets) {
-          const idx = idxData.data.find(i => i.index === target.key);
-          if (!idx) continue;
-          const price = parseFloat(idx.last || idx.lastPrice || 0);
-          const vol   = parseFloat(idx.totalTradedVolume || 0);
-          if (!price) continue;
-          const res = computeScore(target.label, price, vol, now);
-          if (res) {
-            nseIndices.push({
-              symbol: target.label, price: res.newP,
-              priceChange: res.pc, volumeChange: res.vc,
-              score: res.score, totalVolume: res.newV,
-              isIndex: true, warming: false
-            });
-          } else {
-            nseIndices.push({
-              symbol: target.label, price,
-              priceChange: parseFloat(idx.percentChange || idx.pChange || 0),
-              volumeChange: 0, score: 0, totalVolume: vol,
-              isIndex: true, warming: true
-            });
-          }
+      for (const target of INDEX_SYMBOLS) {
+        const q = idxQuotes.find(x => x.symbol === target.yahoo);
+        if (!q) continue;
+        const price = parseFloat(q.regularMarketPrice || 0);
+        const vol   = parseFloat(q.regularMarketVolume || 0);
+        if (!price) continue;
+        const res = computeScore(target.label, price, vol, now);
+        if (res) {
+          nseIndices.push({
+            symbol: target.label, price: res.newP,
+            priceChange: res.pc, volumeChange: res.vc,
+            score: res.score, totalVolume: res.newV,
+            isIndex: true, warming: false
+          });
+        } else {
+          nseIndices.push({
+            symbol: target.label, price,
+            priceChange: parseFloat(q.regularMarketChangePercent || 0),
+            volumeChange: 0, score: 0, totalVolume: vol,
+            isIndex: true, warming: true
+          });
         }
       }
     } catch(e) {
       console.error("Index fetch error:", e.message);
-      // Don't crash — indices are optional
     }
 
     console.log(`\n📈 NSE FNO TOP 5 (${nseTotal} stocks):`);
     for (const r of nseResults) {
       console.log(`  ${r.symbol.padEnd(16)} Price: ${r.priceChange.toFixed(2)}% | Score: ${r.score.toFixed(2)}`);
     }
+    if (nseIndices.length) {
+      console.log(`📊 ${nseIndices.map(i => `${i.symbol}: ${i.priceChange.toFixed(2)}%`).join(" | ")}`);
+    }
 
   } catch(e) {
     console.error("NSE tick error:", e.message);
-    nseFailCount++;
-    nseCookies   = "";
     nseLastFetch = Date.now();
-    // Server stays alive — no rethrow
   }
 }
 
@@ -285,36 +287,32 @@ app.get("/health", (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  res.json({ name: "QuantSigma API v5.2", endpoints: ["/api/momentum", "/api/nse"] });
+  res.json({ name: "QuantSigma API v5.3", endpoints: ["/api/momentum", "/api/nse"] });
 });
 
 // ══════════════════════════════════════════════════════════
 //  START
 // ══════════════════════════════════════════════════════════
 (async () => {
-  console.log("\n🚀 QuantSigma Scanner v5.2 starting...\n");
+  console.log("\n🚀 QuantSigma Scanner v5.3 starting...\n");
 
-  // Crypto — start immediately
+  // Crypto
   await loadCryptoSymbols();
   await tickCrypto();
   setInterval(tickCrypto, REFRESH * 1000);
   setInterval(loadCryptoSymbols, 6 * 60 * 60 * 1000);
 
-  // NSE — start with delay, refresh cookies every 30 min
+  // NSE via Yahoo Finance — runs every 10 seconds
+  // First tick after 5 seconds
   setTimeout(async () => {
-    await getNSECookies();
     await tickNSE();
     setInterval(tickNSE, REFRESH * 1000);
-    setInterval(async () => {
-      nseFailCount = 0; // reset fail count on cookie refresh
-      await getNSECookies();
-    }, 30 * 60 * 1000);
-  }, 3000);
+  }, 5000);
 
 })();
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`\n✅ Server running on port ${PORT}`);
   console.log(`📡 Crypto  → /api/momentum`);
-  console.log(`📈 NSE FNO → /api/nse\n`);
+  console.log(`📈 NSE FNO → /api/nse (Yahoo Finance)\n`);
 });
