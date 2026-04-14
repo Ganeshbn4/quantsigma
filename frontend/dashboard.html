@@ -436,6 +436,7 @@ td:first-child,td:nth-child(2){text-align:left}
   </div>
   <div class="mob-dd-item" onclick="showSection('overview');toggleMobDropdown()">🏠 Overview</div>
   <div class="mob-dd-item" onclick="showSection('scanner');toggleMobDropdown()">📡 Crypto Scanner</div>
+  <div class="mob-dd-item" onclick="showSection('strategies');toggleMobDropdown()">🧠 Strategies</div>
   <div class="mob-dd-item" onclick="showSection('mentorship');toggleMobDropdown()">🎓 Mentorship</div>
   <div class="mob-dd-item" onclick="showSection('subscription');toggleMobDropdown()">💳 Subscription</div>
   <div class="mob-dd-item" onclick="showSection('profile');toggleMobDropdown()">👤 Profile</div>
@@ -474,10 +475,7 @@ td:first-child,td:nth-child(2){text-align:left}
         <span class="nav-icon">🧠</span> Strategies
         <span class="nav-badge-soon">Soon</span>
       </div>
-      <div class="nav-item" id="nav-nse" onclick="showSection('nse')">
-        <span class="nav-icon">📈</span> NSE FNO Scanner
-        <span class="nav-badge-soon">Soon</span>
-      </div>
+
       <div class="nav-section-label">Learn</div>
       <div class="nav-item" id="nav-mentorship" onclick="showSection('mentorship')">
         <span class="nav-icon">🎓</span> Mentorship
@@ -539,13 +537,7 @@ td:first-child,td:nth-child(2){text-align:left}
           <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">Crypto Scanner</div>
           <div style="font-size:.75rem;color:var(--text2)">500+ USDT perpetuals · Live</div>
         </div>
-        <div class="stat-card" style="cursor:pointer;transition:.2s"
-          onmouseover="this.style.borderColor='var(--yellow)'" onmouseout="this.style.borderColor='var(--border)'"
-          onclick="showSection('nse')">
-          <div style="font-size:1.4rem;margin-bottom:8px">📈</div>
-          <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">NSE FNO Scanner</div>
-          <div style="font-size:.75rem;color:var(--yellow)">Coming soon</div>
-        </div>
+
         <div class="stat-card" style="cursor:pointer;transition:.2s"
           onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
           onclick="showSection('mentorship')">
@@ -614,16 +606,7 @@ td:first-child,td:nth-child(2){text-align:left}
       </div>
     </div>
 
-    <!-- NSE COMING SOON -->
-    <div class="dash-section" id="section-nse">
-      <div class="dash-topbar"><div><h1>📈 NSE FNO Scanner</h1><p>NSE Futures &amp; Options · Coming Soon</p></div></div>
-      <div class="coming-soon">
-        <div class="coming-tag">Coming Soon</div>
-        <div class="cs-icon">📈</div>
-        <h3>NSE FNO Scanner</h3>
-        <p>Real-time momentum scanner for all NSE FNO stocks including Nifty 50 and Bank Nifty. Currently in development.</p>
-      </div>
-    </div>
+
 
     <!-- STRATEGIES -->
     <div class="dash-section" id="section-strategies">
