@@ -720,7 +720,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
     <div class="hero-eyebrow"><span class="pulse"></span>Live Scanner · Binance Futures · Real-Time Momentum</div>
     <h1>Real-Time Trading Intelligence<br/>for <em>Serious Traders</em></h1>
     <p class="hero-desc">Institutional-grade momentum scanners, volume analytics, and probability scoring — built for data-driven decision makers. Not advice. Just edge.</p>
-    <div class="hero-cta">
+    <div class="hero-cta" id="hero-cta">
       <button class="btn btn-primary btn-lg" onclick="openModal('signup')">Start Free Trial</button>
       <button class="btn btn-outline btn-lg" onclick="document.getElementById('scanner').scrollIntoView({behavior:'smooth'})">View Live Scanner</button>
     </div>
@@ -1148,6 +1148,11 @@ function unlockScanner(trialHoursLeft){
   document.getElementById('scanner-gate').style.display='none';
   document.getElementById('scanner-content').style.display='block';
   syncMobNav(true);
+  // Swap hero CTA for logged-in users
+  document.getElementById('hero-cta').innerHTML=`
+    <button class="btn btn-primary btn-lg" onclick="window.location.href='dashboard.html'">📊 Go to Dashboard</button>
+    <button class="btn btn-outline btn-lg" onclick="document.getElementById('scanner').scrollIntoView({behavior:'smooth'})">View Live Scanner</button>
+  `;
   if(trialHoursLeft){
     const b=document.getElementById('trial-banner');
     b.style.display='flex';
@@ -1159,6 +1164,18 @@ function lockScanner(reason){
   document.getElementById('scanner-content').style.display='none';
   document.getElementById('trial-banner').style.display='none';
   if(reason!=='unverified') syncMobNav(reason!=='guest');
+  // Update hero CTA based on reason
+  if(reason==='expired'){
+    document.getElementById('hero-cta').innerHTML=`
+      <button class="btn btn-primary btn-lg" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Upgrade to Pro</button>
+      <button class="btn btn-outline btn-lg" onclick="document.getElementById('scanner').scrollIntoView({behavior:'smooth'})">View Scanner</button>
+    `;
+  } else if(reason==='unverified'){
+    document.getElementById('hero-cta').innerHTML=`
+      <button class="btn btn-primary btn-lg" onclick="resendVerification()">📧 Resend Verification</button>
+      <button class="btn btn-outline btn-lg" onclick="document.getElementById('scanner').scrollIntoView({behavior:'smooth'})">View Scanner</button>
+    `;
+  }
   const gate=document.getElementById('scanner-gate');
   gate.style.display='flex';
   if(reason==='guest'){
