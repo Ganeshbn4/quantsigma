@@ -23,34 +23,28 @@
   const app  = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db   = getFirestore(app);
-
   const RAILWAY_URL = 'https://api.quantsigma.in';
 
   let currentUser    = null;
   let currentUserDoc = null;
 
-  // ── Auth guard ────────────────────────────────────────
   onAuthStateChanged(auth, async user => {
     if (!user)               { window.location.href = 'index.html'; return; }
     if (!user.emailVerified) { window.location.href = 'index.html'; return; }
     currentUser = user;
-
     try {
       const snap = await getDocs(query(collection(db,'users'), where('uid','==',user.uid)));
       if (!snap.empty) {
         currentUserDoc = snap.docs[0].data();
-
-        // Session restriction
         const mySession     = localStorage.getItem('qs_session');
         const storedSession = currentUserDoc.sessionToken;
         if (storedSession && mySession && storedSession !== mySession) {
           await signOut(auth);
           localStorage.removeItem('qs_session');
-          alert('You have been logged out because your account was accessed from another device.');
+          alert('Logged out — account accessed from another device.');
           window.location.href = 'index.html';
           return;
         }
-
         renderUserInfo(user, currentUserDoc);
         checkAccess(currentUserDoc);
         startScanners();
@@ -60,7 +54,6 @@
     } catch(e) { console.error(e); }
   });
 
-  // ── Render user info ──────────────────────────────────
   function renderUserInfo(user, data) {
     const name     = data.name || user.email.split('@')[0];
     const plan     = data.plan || 'trial';
@@ -68,174 +61,128 @@
     const subEnd   = data.subscriptionEnd?.toDate?.() || null;
     const now      = new Date();
 
-    // Sidebar
-    const ui=document.getElementById('user-initial');
-    const un=document.getElementById('user-name');
-    const ue=document.getElementById('user-email');
-    const up=document.getElementById('user-plan');
-    if(ui) ui.textContent = name.charAt(0).toUpperCase();
-    if(un) un.textContent = name;
-    if(ue) ue.textContent = user.email;
-    if(up) {
-      if(plan==='pro')        { up.textContent='Pro';        up.className='plan-badge plan-pro'; }
-      else if(plan==='elite') { up.textContent='Elite';      up.className='plan-badge plan-elite'; }
-      else                    { up.textContent='Free Trial'; up.className='plan-badge plan-trial'; }
+    ['user-initial','user-initial-mob'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = name.charAt(0).toUpperCase();
+    });
+    ['user-name','user-name-mob'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = name;
+    });
+    const ue = document.getElementById('user-email');
+    if (ue) ue.textContent = user.email;
+
+    const up = document.getElementById('user-plan');
+    if (up) {
+      if (plan==='pro')        { up.textContent='Pro';        up.className='plan-badge plan-pro'; }
+      else if (plan==='elite') { up.textContent='Elite';      up.className='plan-badge plan-elite'; }
+      else                     { up.textContent='Free Trial'; up.className='plan-badge plan-trial'; }
     }
 
-    // Overview greeting
-    const nt=document.getElementById('user-name-top');
-    if(nt) nt.textContent = name;
+    const nt = document.getElementById('user-name-top');
+    if (nt) nt.textContent = name;
 
-    // Status cards (overview + subscription)
     ['','2'].forEach(s => {
-      const si=document.getElementById('status-icon'+s);
-      const st=document.getElementById('status-title'+s);
-      const sd=document.getElementById('status-desc'+s);
-      const ub=document.getElementById('upgrade-btn'+s);
-      if(!st) return;
-      if(plan==='pro'||plan==='elite') {
+      const si = document.getElementById('status-icon'+s);
+      const st = document.getElementById('status-title'+s);
+      const sd = document.getElementById('status-desc'+s);
+      const ub = document.getElementById('upgrade-btn'+s);
+      if (!st) return;
+      if (plan==='pro'||plan==='elite') {
         const dl = subEnd ? Math.ceil((subEnd-now)/864e5) : '—';
-        if(si) si.textContent = '✅';
+        if (si) si.textContent = '✅';
         st.textContent = plan==='pro' ? 'Pro Plan Active' : 'Elite Plan Active';
         sd.textContent = `${dl} days remaining · Renews ${subEnd?subEnd.toLocaleDateString():'—'}`;
-        if(ub) ub.style.display = 'none';
+        if (ub) ub.style.display = 'none';
       } else {
         const hl = trialEnd>now ? Math.ceil((trialEnd-now)/36e5) : 0;
-        if(hl>0) {
-          if(si) si.textContent = '⏳';
+        if (hl>0) {
+          if (si) si.textContent = '⏳';
           st.textContent = 'Free Trial Active';
           sd.textContent = `${hl} hours remaining · Ends ${trialEnd.toLocaleDateString()}`;
         } else {
-          if(si) si.textContent = '⏰';
+          if (si) si.textContent = '⏰';
           st.textContent = 'Trial Expired';
           sd.textContent = 'Upgrade to continue accessing scanners';
         }
       }
     });
 
-    // Stats & Profile
-    const sp=document.getElementById('stat-plan');
-    const sj=document.getElementById('stat-joined');
-    const pp=document.getElementById('prof-name');
-    const pe=document.getElementById('prof-email');
-    const ppl=document.getElementById('prof-plan');
-    const pj=document.getElementById('prof-joined');
-    const sbp=document.getElementById('sub-plan');
-    if(sp)  sp.textContent  = plan.charAt(0).toUpperCase()+plan.slice(1);
-    if(sj)  sj.textContent  = data.createdAt?.toDate?.()?.toLocaleDateString()||'—';
-    if(pp)  pp.textContent  = name;
-    if(pe)  pe.textContent  = user.email;
-    if(ppl) ppl.textContent = plan.charAt(0).toUpperCase()+plan.slice(1);
-    if(pj)  pj.textContent  = data.createdAt?.toDate?.()?.toLocaleDateString()||'—';
-    if(sbp) sbp.textContent = plan.charAt(0).toUpperCase()+plan.slice(1);
+    const sp  = document.getElementById('stat-plan');
+    const sj  = document.getElementById('stat-joined');
+    const pp  = document.getElementById('prof-name');
+    const pe  = document.getElementById('prof-email');
+    const ppl = document.getElementById('prof-plan');
+    const pj  = document.getElementById('prof-joined');
+    const sbp = document.getElementById('sub-plan');
+    if (sp)  sp.textContent  = plan.charAt(0).toUpperCase()+plan.slice(1);
+    if (sj)  sj.textContent  = data.createdAt?.toDate?.()?.toLocaleDateString()||'—';
+    if (pp)  pp.textContent  = name;
+    if (pe)  pe.textContent  = user.email;
+    if (ppl) ppl.textContent = plan.charAt(0).toUpperCase()+plan.slice(1);
+    if (pj)  pj.textContent  = data.createdAt?.toDate?.()?.toLocaleDateString()||'—';
+    if (sbp) sbp.textContent = plan.charAt(0).toUpperCase()+plan.slice(1);
   }
 
-  // ── Access control ────────────────────────────────────
   function checkAccess(data) {
     const plan     = data.plan || 'trial';
     const trialEnd = data.trialEnd?.toDate?.() || new Date(data.trialEnd);
     const now      = new Date();
     const ok       = plan==='pro' || plan==='elite' || trialEnd > now;
     if (!ok) {
-      ['dash-scanner-gate','nse-scanner-gate'].forEach(id => {
-        const el=document.getElementById(id);
-        if(el) el.style.display='flex';
-      });
-      ['dash-scanner-content','nse-scanner-content'].forEach(id => {
-        const el=document.getElementById(id);
-        if(el) el.style.display='none';
-      });
+      const gate = document.getElementById('dash-scanner-gate');
+      const cont = document.getElementById('dash-scanner-content');
+      if (gate) gate.style.display = 'flex';
+      if (cont) cont.style.display = 'none';
     }
   }
 
-  // ══════════════════════════════════════════════════════
-  //  SCANNERS
-  // ══════════════════════════════════════════════════════
   let scannersStarted = false;
-
   function startScanners() {
     if (scannersStarted) return;
     scannersStarted = true;
     fetchCrypto();
     setInterval(fetchCrypto, 10000);
     setInterval(tickCryptoCD, 1000);
-    fetchNSE();
-    setInterval(fetchNSE, 10000);
-    setInterval(tickNSECD, 1000);
   }
 
-  // ── Crypto ────────────────────────────────────────────
   async function fetchCrypto() {
     try {
       const r = await fetch(`${RAILWAY_URL}/api/momentum`, {signal:AbortSignal.timeout(10000)});
-      if(!r.ok) throw new Error('Server error');
+      if (!r.ok) throw new Error('Server error');
       const d = await r.json();
-      const te=document.getElementById('dash-total');
-      const ts=document.getElementById('dash-ts');
-      if(te) te.textContent = d.total||'—';
-      if(ts) ts.textContent = 'Updated: '+new Date(d.ts).toLocaleTimeString();
-      if(!d.top5||d.top5.length===0) {
-        document.getElementById('dash-scanner-body').innerHTML=
+      const te = document.getElementById('dash-total');
+      const ts = document.getElementById('dash-ts');
+      if (te) te.textContent = d.total||'—';
+      if (ts) ts.textContent = 'Updated: '+new Date(d.ts).toLocaleTimeString();
+      if (!d.top5||d.top5.length===0) {
+        document.getElementById('dash-scanner-body').innerHTML =
           `<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text2)">
           <div style="font-size:1.5rem;margin-bottom:8px">⏳</div>
           Building rolling history... (~10 seconds)</td></tr>`;
       } else { renderCryptoTable(d.top5); }
     } catch(e) {
-      const b=document.getElementById('dash-scanner-body');
-      if(b) b.innerHTML=`<tr><td colspan="7" style="padding:30px;text-align:center;color:var(--red)">⚠ ${e.message}</td></tr>`;
+      const b = document.getElementById('dash-scanner-body');
+      if (b) b.innerHTML = `<tr><td colspan="7" style="padding:30px;text-align:center;color:var(--red)">⚠ ${e.message}</td></tr>`;
     }
   }
 
-  // ── NSE ──────────────────────────────────────────────
-  async function fetchNSE() {
-    try {
-      const r = await fetch(`${RAILWAY_URL}/api/nse`, {signal:AbortSignal.timeout(10000)});
-      if(!r.ok) throw new Error('Server error');
-      const d = await r.json();
-      const te=document.getElementById('nse-total');
-      const ts=document.getElementById('nse-ts');
-      const lt=document.getElementById('nse-last-ts');
-      if(te) te.textContent = d.total||'—';
-      if(ts) ts.textContent = 'Updated: '+new Date(d.ts).toLocaleTimeString();
-      if(lt) lt.textContent = 'Last updated: '+new Date(d.ts).toLocaleTimeString();
-
-      // Always render indices even if top5 not ready
-      if(!d.ready||!d.top5||d.top5.length===0) {
-        const warming = `<tr><td colspan="7" style="padding:30px;text-align:center;color:var(--text2)">
-          <div style="font-size:1.5rem;margin-bottom:8px">⏳</div>
-          Building 5-min rolling history for FNO stocks...<br>
-          <span style="font-size:.75rem;color:var(--yellow);margin-top:6px;display:block">
-          ⚠ Scores appear after ~5 minutes. Indices shown above are updating.</span>
-          </td></tr>`;
-        renderNSETable([], d.indices||[], warming);
-      } else {
-        renderNSETable(d.top5, d.indices||[]);
-      }
-    } catch(e) {
-      const b=document.getElementById('nse-scanner-body');
-      if(b) b.innerHTML=`<tr><td colspan="7" style="padding:30px;text-align:center;color:var(--red)">⚠ ${e.message}</td></tr>`;
-    }
-  }
-
-  // ── Render helpers ────────────────────────────────────
-  const RANK=[
+  const RANK = [
     {bg:'#f59e0b1a',border:'#f59e0b',color:'#f59e0b'},
     {bg:'#94a3b81a',border:'#94a3b8',color:'#94a3b8'},
     {bg:'#cd7f321a',border:'#cd7f32',color:'#cd7f32'},
     {bg:'#1a22351a',border:'#2a3060',color:'#4a5a80'},
     {bg:'#1a22351a',border:'#2a3060',color:'#4a5a80'},
   ];
-  function sc(s){return s>10?'#00e676':s>0?'#69f0ae':s>-10?'#ff5252':'#d50000';}
-  function hue(sym){return(sym.charCodeAt(0)*37+(sym.charCodeAt(1)||0)*17)%360;}
-  function fmtP(p){if(p>=1000)return p.toFixed(2);if(p>=1)return p.toFixed(3);if(p>=0.01)return p.toFixed(4);return p.toFixed(6);}
-  function fmtV(n){if(n>=1e9)return(n/1e9).toFixed(2)+'B';if(n>=1e6)return(n/1e6).toFixed(2)+'M';if(n>=1e3)return(n/1e3).toFixed(2)+'K';return n.toFixed(2);}
-  function fmtIV(n){if(n>=1e7)return(n/1e7).toFixed(2)+'Cr';if(n>=1e5)return(n/1e5).toFixed(2)+'L';if(n>=1e3)return(n/1e3).toFixed(2)+'K';return n.toFixed(0);}
-  function fmtINR(p){return'₹'+p.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
+  function sc(s) { return s>10?'#00e676':s>0?'#69f0ae':s>-10?'#ff5252':'#d50000'; }
+  function hue(sym) { return (sym.charCodeAt(0)*37+(sym.charCodeAt(1)||0)*17)%360; }
+  function fmtP(p) { if(p>=1000)return p.toFixed(2);if(p>=1)return p.toFixed(3);if(p>=0.01)return p.toFixed(4);return p.toFixed(6); }
+  function fmtV(n) { if(n>=1e9)return(n/1e9).toFixed(2)+'B';if(n>=1e6)return(n/1e6).toFixed(2)+'M';if(n>=1e3)return(n/1e3).toFixed(2)+'K';return n.toFixed(2); }
 
   function renderCryptoTable(rows) {
-    document.getElementById('dash-scanner-body').innerHTML=rows.map((r,i)=>{
-      const rs=RANK[i],sym=r.symbol.replace('USDT',''),h=hue(r.symbol),s=sc(r.score);
-      return`<tr>
+    document.getElementById('dash-scanner-body').innerHTML = rows.map((r,i) => {
+      const rs=RANK[i], sym=r.symbol.replace('USDT',''), h=hue(r.symbol), s=sc(r.score);
+      return `<tr>
         <td><div class="rank-badge" style="background:${rs.bg};border:1.5px solid ${rs.border};color:${rs.color}">${i+1}</div></td>
         <td><div class="coin-cell">
           <div class="coin-avatar" style="background:hsl(${h},55%,15%);border:1.5px solid hsl(${h},55%,35%);color:hsl(${h},75%,65%)">${sym.slice(0,2)}</div>
@@ -250,84 +197,29 @@
     }).join('');
   }
 
-  function renderNSETable(rows, indices, warmingHtml) {
-    // ── Fixed index rows: Nifty 50 & Bank Nifty ─────────
-    const indexRows = indices.map(r => {
-      const s=sc(r.score), h=hue(r.symbol);
-      return`<tr style="background:rgba(0,196,232,.04);border-left:3px solid var(--accent)">
-        <td><div style="font-size:.65rem;font-weight:800;color:var(--accent);padding:2px 5px;background:rgba(0,196,232,.12);border-radius:4px;white-space:nowrap;text-align:center">IDX</div></td>
-        <td><div class="coin-cell">
-          <div class="coin-avatar" style="background:hsl(${h},55%,15%);border:1.5px solid hsl(${h},55%,35%);color:hsl(${h},75%,65%)">${r.symbol.slice(0,2)}</div>
-          <div>
-            <div class="coin-sym">${r.symbol}</div>
-            <div class="coin-sub" style="color:var(--accent)">${r.warming?'Warming up...':'NSE Index'}</div>
-          </div>
-        </div></td>
-        <td>${fmtINR(r.price)}</td>
-        <td><span class="chg ${r.priceChange>=0?'up':'dn'}">${r.priceChange>=0?'▲':'▼'} ${Math.abs(r.priceChange).toFixed(2)}%${r.warming?' *':''}</span></td>
-        <td><span style="color:${r.volumeChange>=0?'var(--green)':'var(--red)'};font-weight:600">${r.warming?'—':((r.volumeChange>=0?'+':'')+r.volumeChange.toFixed(2)+'%')}</span></td>
-        <td><span class="score-pill" style="color:${s};border-color:${s}44">${r.warming?'—':((r.score>=0?'+':'')+r.score.toFixed(2))}</span></td>
-        <td style="color:var(--text2)">${r.totalVolume>0?fmtIV(r.totalVolume):'—'}</td>
-      </tr>`;
-    }).join('');
-
-    // ── Separator ─────────────────────────────────────────
-    const separator = indices.length>0 ? `<tr>
-      <td colspan="7" style="padding:5px 16px;background:var(--bg3);font-size:.62rem;font-weight:700;color:var(--text3);letter-spacing:.8px;text-transform:uppercase;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
-        ─── Top 5 FNO Momentum ───
-      </td>
-    </tr>` : '';
-
-    // ── Top 5 FNO stock rows ──────────────────────────────
-    const stockRows = warmingHtml || rows.map((r,i)=>{
-      const rs=RANK[i],s=sc(r.score),h=hue(r.symbol);
-      return`<tr>
-        <td><div class="rank-badge" style="background:${rs.bg};border:1.5px solid ${rs.border};color:${rs.color}">${i+1}</div></td>
-        <td><div class="coin-cell">
-          <div class="coin-avatar" style="background:hsl(${h},55%,15%);border:1.5px solid hsl(${h},55%,35%);color:hsl(${h},75%,65%)">${r.symbol.slice(0,2)}</div>
-          <div><div class="coin-sym">${r.symbol}</div><div class="coin-sub">NSE FNO</div></div>
-        </div></td>
-        <td>${fmtINR(r.price)}</td>
-        <td><span class="chg ${r.priceChange>=0?'up':'dn'}">${r.priceChange>=0?'▲':'▼'} ${Math.abs(r.priceChange).toFixed(2)}%</span></td>
-        <td><span style="color:${r.volumeChange>=0?'var(--green)':'var(--red)'};font-weight:600">${r.volumeChange>=0?'+':''}${r.volumeChange.toFixed(2)}%</span></td>
-        <td><span class="score-pill" style="color:${s};border-color:${s}44">${r.score>=0?'+':''}${r.score.toFixed(2)}</span></td>
-        <td style="color:var(--text2)">${fmtIV(r.totalVolume)}</td>
-      </tr>`;
-    }).join('');
-
-    document.getElementById('nse-scanner-body').innerHTML = indexRows + separator + stockRows;
-  }
-
-  // ── Countdowns ────────────────────────────────────────
-  let cryptoCD=10, nseCD=10;
-  function tickCryptoCD(){
+  let cryptoCD = 10;
+  function tickCryptoCD() {
     cryptoCD--;
-    const el=document.getElementById('dash-cd');
-    if(el){el.textContent=cryptoCD;el.className='cd'+(cryptoCD<=3?' warn':'');}
-    if(cryptoCD<=0){cryptoCD=10;fetchCrypto();}
-  }
-  function tickNSECD(){
-    nseCD--;
-    const el=document.getElementById('nse-cd');
-    if(el){el.textContent=nseCD;el.className='cd'+(nseCD<=3?' warn':'');}
-    if(nseCD<=0){nseCD=10;fetchNSE();}
+    const el = document.getElementById('dash-cd');
+    if (el) { el.textContent=cryptoCD; el.className='cd'+(cryptoCD<=3?' warn':''); }
+    if (cryptoCD<=0) { cryptoCD=10; fetchCrypto(); }
   }
 
-  // ── Logout ────────────────────────────────────────────
-  window.doLogout = async function(){
+  window.doLogout = async function() {
     localStorage.removeItem('qs_session');
     await signOut(auth);
-    window.location.href='index.html';
+    window.location.href = 'index.html';
   };
 
-  // ── Navigation ────────────────────────────────────────
   window.showSection = function(id) {
-    document.querySelectorAll('.dash-section').forEach(s=>s.style.display='none');
-    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-    const sec=document.getElementById('section-'+id);
-    const nav=document.getElementById('nav-'+id);
-    if(sec) sec.style.display='block';
-    if(nav) nav.classList.add('active');
+    document.querySelectorAll('.dash-section').forEach(s => s.style.display='none');
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const sec = document.getElementById('section-'+id);
+    const nav = document.getElementById('nav-'+id);
+    if (sec) sec.style.display = 'block';
+    if (nav) nav.classList.add('active');
+    // close mobile sidebar
+    closeMobileSidebar();
   };
 </script>
 
@@ -345,14 +237,17 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 ::-webkit-scrollbar-track{background:var(--bg2)}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 
-.dash-layout{display:flex;height:100vh}
+.dash-layout{display:flex;min-height:100vh}
 
-/* SIDEBAR */
-.sidebar{width:var(--sidebar);min-width:var(--sidebar);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:10}
-.sidebar-logo{padding:20px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+/* ── SIDEBAR ── */
+.sidebar{width:var(--sidebar);min-width:var(--sidebar);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:50;transition:transform .25s ease}
+.sidebar-logo{padding:20px 18px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:10px}
+.logo-row{display:flex;align-items:center;gap:10px}
 .logo-mark{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;color:#fff}
 .logo-name{font-size:.95rem;font-weight:800;color:#fff}
 .logo-name span{color:var(--accent)}
+.back-link{font-size:.72rem;color:var(--text3);text-decoration:none;display:flex;align-items:center;gap:4px;transition:.15s}
+.back-link:hover{color:var(--accent)}
 .sidebar-nav{flex:1;padding:12px 0;overflow-y:auto}
 .nav-section-label{font-size:.62rem;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3);padding:16px 18px 6px}
 .nav-item{display:flex;align-items:center;gap:10px;padding:10px 18px;color:var(--text2);font-size:.82rem;font-weight:500;cursor:pointer;transition:.15s;border-left:2px solid transparent}
@@ -365,7 +260,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .user-card{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .user-initial{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent2),var(--accent));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem;color:#fff;flex-shrink:0}
 .user-info{flex:1;min-width:0}
-.user-name{font-size:.82rem;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.user-name-text{font-size:.82rem;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .user-email{font-size:.68rem;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .plan-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.65rem;font-weight:700;text-transform:uppercase;margin-top:4px}
 .plan-trial{background:rgba(100,116,139,.15);color:#94a3b8}
@@ -374,7 +269,35 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .logout-btn{width:100%;padding:8px;border-radius:6px;background:transparent;border:1px solid var(--border2);color:var(--text3);font-size:.75rem;cursor:pointer;transition:.15s}
 .logout-btn:hover{border-color:var(--red);color:var(--red)}
 
-/* MAIN */
+/* ── MOBILE TOPBAR ── */
+.mobile-topbar{display:none;position:fixed;top:0;left:0;right:0;z-index:40;background:rgba(7,9,15,.97);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);height:56px;align-items:center;justify-content:space-between;padding:0 16px}
+.mob-left{display:flex;align-items:center;gap:10px}
+.mob-menu-btn{background:none;border:none;color:var(--text2);font-size:1.3rem;cursor:pointer;padding:6px;line-height:1}
+.mob-logo{display:flex;align-items:center;gap:8px}
+.mob-logo-mark{width:28px;height:28px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11px;color:#fff}
+.mob-logo-name{font-size:.9rem;font-weight:800;color:#fff}
+.mob-logo-name span{color:var(--accent)}
+.mob-right{display:flex;align-items:center;gap:8px}
+.mob-user-initial{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--accent2),var(--accent));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.75rem;color:#fff}
+.mob-dots-btn{background:none;border:none;color:var(--text2);font-size:1.2rem;cursor:pointer;padding:6px;line-height:1}
+
+/* ── MOBILE DROPDOWN MENU ── */
+.mob-dropdown{position:fixed;top:56px;right:12px;z-index:200;background:var(--card);border:1px solid var(--border2);border-radius:10px;min-width:180px;padding:8px 0;display:none;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.mob-dropdown.open{display:block}
+.mob-dd-user{padding:12px 16px;border-bottom:1px solid var(--border)}
+.mob-dd-name{font-size:.82rem;font-weight:700;color:#fff}
+.mob-dd-email{font-size:.68rem;color:var(--text3);margin-top:2px}
+.mob-dd-item{display:flex;align-items:center;gap:10px;padding:10px 16px;font-size:.82rem;color:var(--text2);cursor:pointer;transition:.15s}
+.mob-dd-item:hover{background:rgba(255,255,255,.04);color:var(--text)}
+.mob-dd-item.danger{color:var(--red)}
+.mob-dd-item.danger:hover{background:rgba(255,68,68,.07)}
+.mob-dd-divider{height:1px;background:var(--border);margin:4px 0}
+
+/* ── SIDEBAR OVERLAY (mobile) ── */
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:45}
+.sidebar-overlay.open{display:block}
+
+/* ── MAIN ── */
 .dash-main{margin-left:var(--sidebar);flex:1;overflow-y:auto;padding:28px}
 .dash-section{display:none}
 
@@ -470,56 +393,95 @@ td:first-child,td:nth-child(2){text-align:left}
 .profile-row .label{color:var(--text3);font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
 .profile-row .val{color:var(--text);font-weight:600}
 
+/* ── MOBILE RESPONSIVE ── */
 @media(max-width:768px){
   .sidebar{transform:translateX(-100%)}
-  .dash-main{margin-left:0}
+  .sidebar.open{transform:translateX(0)}
+  .dash-main{margin-left:0;padding:16px;padding-top:72px}
+  .mobile-topbar{display:flex}
   .stats-cards{grid-template-columns:1fr 1fr}
+  .scanner-meta-row{grid-template-columns:1fr 1fr}
+  .meta-cell:last-child{display:none}
+  .dash-topbar{margin-bottom:16px}
+  .dash-topbar h1{font-size:1rem}
+  .coming-soon{padding:40px 20px}
+}
+@media(max-width:400px){
+  .stats-cards{grid-template-columns:1fr}
 }
 </style>
 </head>
 <body>
+
+<!-- MOBILE TOPBAR -->
+<div class="mobile-topbar">
+  <div class="mob-left">
+    <button class="mob-menu-btn" onclick="toggleMobileSidebar()">☰</button>
+    <div class="mob-logo">
+      <div class="mob-logo-mark">QΣ</div>
+      <span class="mob-logo-name">Quant<span>Sigma</span></span>
+    </div>
+  </div>
+  <div class="mob-right">
+    <div class="mob-user-initial" id="user-initial-mob">U</div>
+    <button class="mob-dots-btn" onclick="toggleMobDropdown()">⋯</button>
+  </div>
+</div>
+
+<!-- MOBILE DROPDOWN -->
+<div class="mob-dropdown" id="mob-dropdown">
+  <div class="mob-dd-user">
+    <div class="mob-dd-name" id="user-name-mob">Loading...</div>
+    <div class="mob-dd-email" id="user-email-mob"></div>
+  </div>
+  <div class="mob-dd-item" onclick="showSection('overview');toggleMobDropdown()">🏠 Overview</div>
+  <div class="mob-dd-item" onclick="showSection('scanner');toggleMobDropdown()">📡 Crypto Scanner</div>
+  <div class="mob-dd-item" onclick="showSection('mentorship');toggleMobDropdown()">🎓 Mentorship</div>
+  <div class="mob-dd-item" onclick="showSection('subscription');toggleMobDropdown()">💳 Subscription</div>
+  <div class="mob-dd-item" onclick="showSection('profile');toggleMobDropdown()">👤 Profile</div>
+  <div class="mob-dd-divider"></div>
+  <div class="mob-dd-item" onclick="window.location.href='index.html'">← Main Page</div>
+  <div class="mob-dd-divider"></div>
+  <div class="mob-dd-item danger" onclick="doLogout()">🚪 Log Out</div>
+</div>
+
+<!-- SIDEBAR OVERLAY -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeMobileSidebar()"></div>
+
 <div class="dash-layout">
 
   <!-- SIDEBAR -->
-  <aside class="sidebar">
-    <div class="sidebar-logo" style="flex-direction:column;align-items:flex-start;gap:10px">
-      <div style="display:flex;align-items:center;gap:10px">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-row">
         <div class="logo-mark">QΣ</div>
         <span class="logo-name">Quant<span>Sigma</span></span>
       </div>
-      <a href="index.html" style="display:flex;align-items:center;gap:5px;font-size:.72rem;color:var(--text3);text-decoration:none;transition:.15s"
-        onmouseover="this.style.color='var(--accent)'"
-        onmouseout="this.style.color='var(--text3)'">
-        ← Back to main page
-      </a>
+      <a href="index.html" class="back-link">← Back to main page</a>
     </div>
     <nav class="sidebar-nav">
       <div class="nav-section-label">Main</div>
       <div class="nav-item active" id="nav-overview" onclick="showSection('overview')">
         <span class="nav-icon">🏠</span> Overview
       </div>
-
       <div class="nav-section-label">Scanners</div>
       <div class="nav-item" id="nav-scanner" onclick="showSection('scanner')">
         <span class="nav-icon">📡</span> Crypto Scanner
         <span class="nav-badge">Live</span>
       </div>
-      <div class="nav-item" id="nav-equity" onclick="showSection('equity')">
-        <span class="nav-icon">📈</span> NSE FNO Scanner
-        <span class="nav-badge">Live</span>
-      </div>
-
       <div class="nav-section-label">Coming Soon</div>
       <div class="nav-item" id="nav-strategies" onclick="showSection('strategies')">
         <span class="nav-icon">🧠</span> Strategies
         <span class="nav-badge-soon">Soon</span>
       </div>
-
+      <div class="nav-item" id="nav-nse" onclick="showSection('nse')">
+        <span class="nav-icon">📈</span> NSE FNO Scanner
+        <span class="nav-badge-soon">Soon</span>
+      </div>
       <div class="nav-section-label">Learn</div>
       <div class="nav-item" id="nav-mentorship" onclick="showSection('mentorship')">
         <span class="nav-icon">🎓</span> Mentorship
       </div>
-
       <div class="nav-section-label">Account</div>
       <div class="nav-item" id="nav-subscription" onclick="showSection('subscription')">
         <span class="nav-icon">💳</span> Subscription
@@ -532,8 +494,8 @@ td:first-child,td:nth-child(2){text-align:left}
       <div class="user-card">
         <div class="user-initial" id="user-initial">U</div>
         <div class="user-info">
-          <div class="user-name"  id="user-name">Loading...</div>
-          <div class="user-email" id="user-email"></div>
+          <div class="user-name-text" id="user-name">Loading...</div>
+          <div class="user-email"     id="user-email"></div>
           <span class="plan-badge plan-trial" id="user-plan">Trial</span>
         </div>
       </div>
@@ -544,14 +506,14 @@ td:first-child,td:nth-child(2){text-align:left}
   <!-- MAIN -->
   <main class="dash-main">
 
-    <!-- ── OVERVIEW ── -->
+    <!-- OVERVIEW -->
     <div class="dash-section" id="section-overview" style="display:block">
       <div class="dash-topbar">
         <div>
           <h1>Good morning, <span id="user-name-top">Trader</span> 👋</h1>
           <p>Here's your QuantSigma dashboard overview</p>
         </div>
-        <button class="btn-primary" onclick="showSection('scanner')">Open Crypto Scanner →</button>
+        <button class="btn-primary" onclick="showSection('scanner')">Open Scanner →</button>
       </div>
       <div class="status-card">
         <div class="status-left">
@@ -561,14 +523,13 @@ td:first-child,td:nth-child(2){text-align:left}
             <div class="status-desc"  id="status-desc">Please wait</div>
           </div>
         </div>
-        <button class="upgrade-btn" id="upgrade-btn"
-          onclick="window.location.href='index.html#pricing'">Upgrade to Pro</button>
+        <button class="upgrade-btn" id="upgrade-btn" onclick="window.location.href='index.html#pricing'">Upgrade to Pro</button>
       </div>
       <div class="stats-cards">
         <div class="stat-card"><div class="label">Current Plan</div><div class="value" id="stat-plan">—</div><div class="sub">quantsigma.in</div></div>
         <div class="stat-card"><div class="label">Member Since</div><div class="value" id="stat-joined">—</div><div class="sub">Account created</div></div>
         <div class="stat-card"><div class="label">Crypto Pairs</div><div class="value">500+</div><div class="sub">Binance Futures</div></div>
-        <div class="stat-card"><div class="label">FNO Stocks</div><div class="value">213</div><div class="sub">NSE India</div></div>
+        <div class="stat-card"><div class="label">Refresh Rate</div><div class="value">10s</div><div class="sub">Live data</div></div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px">
         <div class="stat-card" style="cursor:pointer;transition:.2s"
@@ -579,11 +540,11 @@ td:first-child,td:nth-child(2){text-align:left}
           <div style="font-size:.75rem;color:var(--text2)">500+ USDT perpetuals · Live</div>
         </div>
         <div class="stat-card" style="cursor:pointer;transition:.2s"
-          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
-          onclick="showSection('equity')">
+          onmouseover="this.style.borderColor='var(--yellow)'" onmouseout="this.style.borderColor='var(--border)'"
+          onclick="showSection('nse')">
           <div style="font-size:1.4rem;margin-bottom:8px">📈</div>
           <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">NSE FNO Scanner</div>
-          <div style="font-size:.75rem;color:var(--text2)">213 FNO stocks + Nifty · Live</div>
+          <div style="font-size:.75rem;color:var(--yellow)">Coming soon</div>
         </div>
         <div class="stat-card" style="cursor:pointer;transition:.2s"
           onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
@@ -602,7 +563,7 @@ td:first-child,td:nth-child(2){text-align:left}
       </div>
     </div>
 
-    <!-- ── CRYPTO SCANNER ── -->
+    <!-- CRYPTO SCANNER -->
     <div class="dash-section" id="section-scanner">
       <div class="dash-topbar">
         <div><h1>📡 Crypto Futures Scanner</h1><p>Binance USDT-M Perpetuals · Real-time momentum · Crypto only</p></div>
@@ -653,62 +614,18 @@ td:first-child,td:nth-child(2){text-align:left}
       </div>
     </div>
 
-    <!-- ── NSE FNO SCANNER ── -->
-    <div class="dash-section" id="section-equity">
-      <div class="dash-topbar">
-        <div><h1>📈 NSE FNO Scanner</h1><p>NSE Futures &amp; Options · Nifty 50 · Bank Nifty · 213 FNO stocks</p></div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--text2)">
-          Refreshes in <span class="cd" id="nse-cd">10</span>s
-        </div>
-      </div>
-      <div class="scanner-card">
-        <div class="scanner-head">
-          <div class="scanner-head-left">
-            <div class="live-pill"><span class="live-dot"></span>Live</div>
-            <span class="scanner-title">Nifty 50 · Bank Nifty · Top 5 FNO Momentum</span>
-          </div>
-          <span style="font-size:.7rem;color:var(--text3)" id="nse-ts">Awaiting...</span>
-        </div>
-        <div class="scanner-meta-row">
-          <div class="meta-cell"><div class="meta-val" id="nse-total">—</div><div class="meta-lbl">Stocks Scanned</div></div>
-          <div class="meta-cell"><div class="meta-val">NSE India</div><div class="meta-lbl">Exchange</div></div>
-          <div class="meta-cell"><div class="meta-val">5 Min Rolling</div><div class="meta-lbl">Window</div></div>
-        </div>
-        <div class="dash-gate" id="nse-scanner-gate" style="display:none">
-          <div class="gate-box">
-            <div class="gate-icon">⏰</div>
-            <h3>Your trial has expired</h3>
-            <p>Upgrade to Pro to access all scanners.</p>
-            <button class="btn-primary" onclick="window.location.href='index.html#pricing'">View Plans</button>
-          </div>
-        </div>
-        <div id="nse-scanner-content">
-          <div class="table-wrap">
-            <table>
-              <thead><tr>
-                <th style="width:40px">#</th><th>Symbol</th>
-                <th>Price (₹)</th><th>Price Δ 5m</th>
-                <th>Vol Δ 5m</th><th>Score</th><th>Total Volume</th>
-              </tr></thead>
-              <tbody id="nse-scanner-body">
-                <tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text2)">
-                  <div style="font-size:1.5rem;margin-bottom:8px">⏳</div>
-                  Connecting to NSE scanner...<br>
-                  <span style="font-size:.75rem;color:var(--yellow);margin-top:6px;display:block">
-                  ⚠ NSE scores need ~5 minutes. Nifty &amp; BankNifty appear first.</span>
-                </td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="scanner-foot">
-            <span id="nse-last-ts">Awaiting first fetch...</span>
-            <span class="disclaimer">⚠ For informational purposes only. Not financial advice.</span>
-          </div>
-        </div>
+    <!-- NSE COMING SOON -->
+    <div class="dash-section" id="section-nse">
+      <div class="dash-topbar"><div><h1>📈 NSE FNO Scanner</h1><p>NSE Futures &amp; Options · Coming Soon</p></div></div>
+      <div class="coming-soon">
+        <div class="coming-tag">Coming Soon</div>
+        <div class="cs-icon">📈</div>
+        <h3>NSE FNO Scanner</h3>
+        <p>Real-time momentum scanner for all NSE FNO stocks including Nifty 50 and Bank Nifty. Currently in development.</p>
       </div>
     </div>
 
-    <!-- ── STRATEGIES ── -->
+    <!-- STRATEGIES -->
     <div class="dash-section" id="section-strategies">
       <div class="dash-topbar"><div><h1>🧠 Strategies</h1><p>Quantitative trading strategies and research</p></div></div>
       <div class="coming-soon">
@@ -719,7 +636,7 @@ td:first-child,td:nth-child(2){text-align:left}
       </div>
     </div>
 
-    <!-- ── MENTORSHIP ── -->
+    <!-- MENTORSHIP -->
     <div class="dash-section" id="section-mentorship">
       <div class="dash-topbar"><div><h1>🎓 Mentorship</h1><p>Programs, live sessions, and learning resources</p></div></div>
       <div class="mentor-cards">
@@ -748,7 +665,7 @@ td:first-child,td:nth-child(2){text-align:left}
       </div>
     </div>
 
-    <!-- ── SUBSCRIPTION ── -->
+    <!-- SUBSCRIPTION -->
     <div class="dash-section" id="section-subscription">
       <div class="dash-topbar"><div><h1>💳 Subscription</h1><p>Your current plan and billing</p></div></div>
       <div class="status-card" style="margin-bottom:20px">
@@ -763,26 +680,58 @@ td:first-child,td:nth-child(2){text-align:left}
       </div>
       <div class="stats-cards">
         <div class="stat-card"><div class="label">Plan</div><div class="value" id="sub-plan">—</div></div>
-        <div class="stat-card"><div class="label">Scanners Access</div><div class="value">2 Live</div><div class="sub">Crypto + NSE FNO</div></div>
+        <div class="stat-card"><div class="label">Scanner Access</div><div class="value">Live</div><div class="sub">Crypto Futures</div></div>
       </div>
       <div style="margin-top:16px;padding:16px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:.8rem;color:var(--text2)">
         For billing support contact <a href="mailto:hello@quantsigma.in" style="color:var(--accent)">hello@quantsigma.in</a>
       </div>
     </div>
 
-    <!-- ── PROFILE ── -->
+    <!-- PROFILE -->
     <div class="dash-section" id="section-profile">
       <div class="dash-topbar"><div><h1>👤 Profile</h1><p>Your account details</p></div></div>
       <div class="profile-card">
-        <div class="profile-row"><span class="label">Name</span>    <span class="val" id="prof-name">—</span></div>
-        <div class="profile-row"><span class="label">Email</span>   <span class="val" id="prof-email">—</span></div>
-        <div class="profile-row"><span class="label">Plan</span>    <span class="val" id="prof-plan">—</span></div>
-        <div class="profile-row"><span class="label">Joined</span>  <span class="val" id="prof-joined">—</span></div>
+        <div class="profile-row"><span class="label">Name</span>   <span class="val" id="prof-name">—</span></div>
+        <div class="profile-row"><span class="label">Email</span>  <span class="val" id="prof-email">—</span></div>
+        <div class="profile-row"><span class="label">Plan</span>   <span class="val" id="prof-plan">—</span></div>
+        <div class="profile-row"><span class="label">Joined</span> <span class="val" id="prof-joined">—</span></div>
         <div class="profile-row"><span class="label">Verified</span><span class="val" style="color:var(--green)">✓ Verified</span></div>
       </div>
     </div>
 
   </main>
 </div>
+
+<script>
+// Mobile sidebar toggle
+function toggleMobileSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('open');
+}
+function closeMobileSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
+// Mobile dropdown (3 dots)
+function toggleMobDropdown() {
+  document.getElementById('mob-dropdown').classList.toggle('open');
+}
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  const dd  = document.getElementById('mob-dropdown');
+  const btn = document.querySelector('.mob-dots-btn');
+  if (dd && btn && !dd.contains(e.target) && !btn.contains(e.target)) {
+    dd.classList.remove('open');
+  }
+});
+
+// Also update mob email
+const origRender = window.renderUserInfo;
+document.addEventListener('DOMContentLoaded', () => {
+  const emailMob = document.getElementById('user-email-mob');
+  // Will be populated by Firebase onAuthStateChanged
+});
+</script>
 </body>
 </html>
