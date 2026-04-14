@@ -44,9 +44,6 @@
   let currentUserDoc = null;
   let currentUserRef = null;
 
-  // ══════════════════════════════════════════════════════
-  //  AUTH STATE
-  // ══════════════════════════════════════════════════════
   onAuthStateChanged(auth, async user => {
     const loginBtn  = document.getElementById('nav-login');
     const signupBtn = document.getElementById('nav-signup');
@@ -57,11 +54,8 @@
 
     if (user) {
       currentUser = user;
-
-      // Session token
       const sessionToken = `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
       localStorage.setItem('qs_session', sessionToken);
-
       try {
         const snap = await getDocs(query(collection(db,'users'), where('uid','==',user.uid)));
         if (!snap.empty) {
@@ -69,18 +63,15 @@
           currentUserRef = snap.docs[0].ref;
           await updateDoc(currentUserRef, { sessionToken });
 
-          // Email verification check
           if (!user.emailVerified) {
             showVerificationBanner();
             lockScanner('unverified');
-            // Show username in nav even if unverified
             updateNav(user, currentUserDoc, false);
             return;
           }
 
           updateNav(user, currentUserDoc, user.email === ADMIN_EMAIL);
 
-          // Check plan/trial
           const trialEnd = currentUserDoc.trialEnd?.toDate?.() || new Date(currentUserDoc.trialEnd);
           const plan     = currentUserDoc.plan || 'trial';
           const now      = new Date();
@@ -117,16 +108,12 @@
     const userLabel = document.getElementById('nav-user');
     const adminLink = document.getElementById('nav-admin');
     const dashBtn   = document.getElementById('nav-dashboard');
-
     if(loginBtn)  loginBtn.style.display  = 'none';
     if(signupBtn) signupBtn.style.display = 'none';
     if(logoutBtn) logoutBtn.style.display = 'inline-flex';
     if(dashBtn)   dashBtn.style.display   = 'inline-flex';
-
-    // Show NAME instead of email
     if(userLabel) {
       userLabel.style.display = 'inline-flex';
-      // Use stored name from Firestore, fallback to email prefix
       userLabel.textContent = data?.name || user.email.split('@')[0];
     }
     if(adminLink && isAdmin) adminLink.style.display = 'inline-flex';
@@ -141,9 +128,6 @@
     if(b) b.style.display='none';
   }
 
-  // ══════════════════════════════════════════════════════
-  //  SIGNUP — sends combined welcome+verify via EmailJS
-  // ══════════════════════════════════════════════════════
   window.doSignup = async function() {
     const name  = document.getElementById('su-name').value.trim();
     const email = document.getElementById('su-email').value.trim();
@@ -152,34 +136,22 @@
     const ok    = document.getElementById('su-ok');
     const btn   = document.getElementById('su-btn');
     err.style.display='none'; ok.style.display='none';
-
     if(!name)                return showMsg(err,'Please enter your full name.');
     if(!email.includes('@')) return showMsg(err,'Please enter a valid email address.');
     if(pass.length<8)        return showMsg(err,'Password must be at least 8 characters.');
     const emailRegex=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if(!emailRegex.test(email)) return showMsg(err,'Please enter a valid email address.');
-
     btn.disabled=true; btn.textContent='Creating account...';
     try {
       const cred     = await createUserWithEmailAndPassword(auth, email, pass);
       const trialEnd = new Date(Date.now() + 2*24*60*60*1000);
-
-      // Get Firebase verification link
-      // We send verification email via Firebase first to get the process started
-      // Then send our custom email via EmailJS which goes to inbox
-      await sendEmailVerification(cred.user, {
-        url: 'https://www.quantsigma.in/auth-action'
-      });
-
-      // Save to Firestore
+      await sendEmailVerification(cred.user, { url: 'https://www.quantsigma.in/auth-action' });
       await addDoc(collection(db,'users'), {
         uid:cred.user.uid, name, email,
         plan:'trial', trialEnd,
         sessionToken:'',
         createdAt:serverTimestamp()
       });
-
-      // Send combined welcome + verify email via EmailJS (goes to inbox)
       try {
         await emailjs.send('service_k58nt1r', 'template_vc8iwiv', {
           to_name:     name,
@@ -188,8 +160,7 @@
           trial_end:   trialEnd.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'})
         });
       } catch(e) { console.warn('EmailJS error:', e); }
-
-      showMsg(ok, `✅ Welcome ${name}! A verification + welcome email has been sent to ${email}. Please verify before logging in.`);
+      showMsg(ok, `✅ Welcome ${name}! A verification email has been sent to ${email}. Please verify before logging in.`);
       setTimeout(() => closeModal(), 4000);
     } catch(e) {
       const msgs = {
@@ -203,9 +174,6 @@
     }
   };
 
-  // ══════════════════════════════════════════════════════
-  //  LOGIN
-  // ══════════════════════════════════════════════════════
   window.doLogin = async function() {
     const email = document.getElementById('li-email').value.trim();
     const pass  = document.getElementById('li-pass').value;
@@ -213,9 +181,7 @@
     const ok    = document.getElementById('li-ok');
     const btn   = document.getElementById('li-btn');
     err.style.display='none'; ok.style.display='none';
-
     if(!email||!pass) return showMsg(err,'Please fill in all fields.');
-
     btn.disabled=true; btn.textContent='Logging in...';
     try {
       const cred = await signInWithEmailAndPassword(auth, email, pass);
@@ -241,7 +207,6 @@
     }
   };
 
-  // ── Resend verification ───────────────────────────────
   window.resendVerification = async function() {
     const email = document.getElementById('li-email').value.trim() || window._unverifiedEmail;
     const pass  = document.getElementById('li-pass').value;
@@ -250,8 +215,6 @@
     try {
       const cred = await signInWithEmailAndPassword(auth, email, pass);
       await sendEmailVerification(cred.user, { url:'https://www.quantsigma.in/auth-action' });
-
-      // Also resend via EmailJS so it goes to inbox
       const snap = await getDocs(query(collection(db,'users'), where('uid','==',cred.user.uid)));
       const name = snap.empty ? email.split('@')[0] : snap.docs[0].data().name;
       await emailjs.send('service_k58nt1r','template_vc8iwiv',{
@@ -260,7 +223,6 @@
         verify_link: `https://www.quantsigma.in/auth-action?mode=verifyEmail&email=${encodeURIComponent(email)}`,
         trial_end:   '—'
       });
-
       await signOut(auth);
       showToast('✅ Verification email sent! Check your inbox.');
     } catch(e) {
@@ -273,7 +235,6 @@
     }
   };
 
-  // ── Forgot password ───────────────────────────────────
   window.doForgotPassword = async function() {
     const email = document.getElementById('fp-email').value.trim();
     const err   = document.getElementById('fp-err');
@@ -296,14 +257,12 @@
     }
   };
 
-  // ── Logout ────────────────────────────────────────────
   window.doLogout = async function() {
     localStorage.removeItem('qs_session');
     await signOut(auth);
     showToast('Logged out successfully');
   };
 
-  // ── Razorpay ──────────────────────────────────────────
   window.startPayment = async function(planKey) {
     if(!currentUser){openModal('login');return;}
     const plan=PLANS[planKey]; if(!plan) return;
@@ -334,7 +293,6 @@
     rzp.open();
   };
 
-  // ── Mentorship ────────────────────────────────────────
   window.submitMentorship = async function() {
     const name=document.getElementById('m-name').value.trim();
     const email=document.getElementById('m-email').value.trim();
@@ -364,7 +322,6 @@
     finally{btn.disabled=false;btn.textContent='Submit Application';}
   };
 
-  // ── Admin ─────────────────────────────────────────────
   window.openAdmin=async function(){
     if(!currentUser||currentUser.email!==ADMIN_EMAIL){showToast('Access denied.');return;}
     document.getElementById('admin-overlay').classList.add('open');
@@ -447,7 +404,7 @@ a{text-decoration:none;color:inherit}
 
 /* NAV */
 nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(7,9,15,0.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);height:60px}
-.nav-inner{max-width:1280px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:100%;padding:0 28px}
+.nav-inner{max-width:1280px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:100%;padding:0 20px}
 .logo{display:flex;align-items:center;gap:10px}
 .logo-mark{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;color:#fff;letter-spacing:-1px}
 .logo-name{font-size:1.05rem;font-weight:800;color:#fff}
@@ -469,6 +426,15 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(7,9,15,0.95)
 .btn-logout:hover{border-color:var(--red);color:var(--red)}
 .btn-admin{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--yellow);display:none;font-size:.75rem}
 .btn-dashboard{background:rgba(0,196,232,.1);border:1px solid rgba(0,196,232,.3);color:var(--accent);display:none;font-size:.75rem}
+
+/* MOBILE NAV */
+.mob-nav-dots{display:none;background:none;border:none;color:var(--text2);font-size:1.3rem;cursor:pointer;padding:6px;letter-spacing:1px}
+.mob-nav-dropdown{position:fixed;top:60px;right:12px;z-index:200;background:var(--card);border:1px solid var(--border2);border-radius:10px;min-width:180px;padding:8px 0;display:none;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.mob-nav-dropdown.open{display:block}
+.mob-nav-item{display:flex;align-items:center;gap:10px;padding:10px 16px;font-size:.82rem;color:var(--text2);cursor:pointer;transition:.15s}
+.mob-nav-item:hover{background:rgba(255,255,255,.04);color:var(--text)}
+.mob-nav-item.danger{color:var(--red)}
+.mob-nav-divider{height:1px;background:var(--border);margin:4px 0}
 
 /* HERO */
 .hero{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:80px 28px 60px;position:relative;overflow:hidden}
@@ -544,7 +510,6 @@ td:first-child,td:nth-child(2){text-align:left}
 .loading-state{padding:60px;text-align:center;color:var(--text2);font-size:.85rem}
 .spin{display:inline-block;animation:spin 1s linear infinite;font-size:1.5rem;margin-bottom:10px}
 @keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
-.warming-note{font-size:.72rem;color:var(--yellow);margin-top:6px}
 .error-state{padding:40px;text-align:center;color:var(--red);font-size:.82rem}
 
 /* FEATURES */
@@ -678,6 +643,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
 .toast{position:fixed;bottom:24px;right:24px;z-index:400;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:12px 18px;font-size:.82rem;color:var(--text);display:none;align-items:center;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
 .toast.show{display:flex}
 
+/* RESPONSIVE */
 @media(max-width:900px){
   .mentor-layout{grid-template-columns:1fr}
   .footer-top{grid-template-columns:1fr 1fr}
@@ -686,8 +652,17 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
 }
 @media(max-width:640px){
   .nav-links{display:none}
+  .nav-actions .btn-ghost,
+  .nav-actions .btn-primary,
+  .nav-actions .btn-logout,
+  .nav-actions .btn-dashboard,
+  .nav-actions .btn-admin,
+  .nav-actions .nav-user{display:none!important}
+  .mob-nav-dots{display:inline-flex}
   .footer-top{grid-template-columns:1fr}
   .hero-metrics{gap:20px}
+  .hero{padding:80px 20px 50px}
+  .cta-band{padding:40px 20px}
 }
 </style>
 </head>
@@ -715,19 +690,34 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
     <div class="nav-actions">
       <span class="nav-user" id="nav-user"></span>
       <button class="btn btn-dashboard" id="nav-dashboard" onclick="window.location.href='dashboard.html'">📊 Dashboard</button>
-      <button class="btn btn-admin" id="nav-admin" onclick="openAdmin()">⚙ Admin</button>
-      <button class="btn btn-ghost" id="nav-login" onclick="openModal('login')">Log In</button>
-      <button class="btn btn-primary" id="nav-signup" onclick="openModal('signup')">Start Free Trial</button>
-      <button class="btn btn-logout" id="nav-logout" onclick="doLogout()">Log Out</button>
+      <button class="btn btn-admin"     id="nav-admin"     onclick="openAdmin()">⚙ Admin</button>
+      <button class="btn btn-ghost"     id="nav-login"     onclick="openModal('login')">Log In</button>
+      <button class="btn btn-primary"   id="nav-signup"    onclick="openModal('signup')">Start Free Trial</button>
+      <button class="btn btn-logout"    id="nav-logout"    onclick="doLogout()">Log Out</button>
+      <!-- Mobile 3-dots -->
+      <button class="mob-nav-dots" onclick="toggleMobNav()">⋯</button>
     </div>
   </div>
 </nav>
+
+<!-- MOBILE NAV DROPDOWN -->
+<div class="mob-nav-dropdown" id="mob-nav-dropdown">
+  <div class="mob-nav-item" onclick="document.getElementById('scanner').scrollIntoView({behavior:'smooth'});toggleMobNav()">📡 Scanner</div>
+  <div class="mob-nav-item" onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'});toggleMobNav()">⚡ Features</div>
+  <div class="mob-nav-item" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'});toggleMobNav()">💰 Pricing</div>
+  <div class="mob-nav-item" onclick="document.getElementById('mentorship').scrollIntoView({behavior:'smooth'});toggleMobNav()">🎓 Mentorship</div>
+  <div class="mob-nav-divider"></div>
+  <div class="mob-nav-item" id="mob-dashboard" style="display:none" onclick="window.location.href='dashboard.html'">📊 Dashboard</div>
+  <div class="mob-nav-item" id="mob-login"    onclick="openModal('login');toggleMobNav()">🔑 Log In</div>
+  <div class="mob-nav-item" id="mob-signup"   onclick="openModal('signup');toggleMobNav()">✨ Start Free Trial</div>
+  <div class="mob-nav-item danger" id="mob-logout" style="display:none" onclick="doLogout();toggleMobNav()">🚪 Log Out</div>
+</div>
 
 <!-- HERO -->
 <section class="hero" id="home">
   <div class="hero-bg"></div>
   <div class="hero-inner">
-    <div class="hero-eyebrow"><span class="pulse"></span>Live Scanner · Binance Futures · NSE FNO · Crypto Only</div>
+    <div class="hero-eyebrow"><span class="pulse"></span>Live Scanner · Binance Futures · Real-Time Momentum</div>
     <h1>Real-Time Trading Intelligence<br/>for <em>Serious Traders</em></h1>
     <p class="hero-desc">Institutional-grade momentum scanners, volume analytics, and probability scoring — built for data-driven decision makers. Not advice. Just edge.</p>
     <div class="hero-cta">
@@ -735,21 +725,21 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
       <button class="btn btn-outline btn-lg" onclick="document.getElementById('scanner').scrollIntoView({behavior:'smooth'})">View Live Scanner</button>
     </div>
     <div class="hero-metrics">
-      <div><div class="metric-val">200+</div><div class="metric-lbl">Crypto Pairs</div></div>
-      <div><div class="metric-val">213</div><div class="metric-lbl">NSE FNO Stocks</div></div>
+      <div><div class="metric-val">500+</div><div class="metric-lbl">Crypto Pairs</div></div>
       <div><div class="metric-val">10s</div><div class="metric-lbl">Refresh Interval</div></div>
+      <div><div class="metric-val">5 Min</div><div class="metric-lbl">Rolling Window</div></div>
       <div><div class="metric-val">99.8%</div><div class="metric-lbl">Uptime</div></div>
     </div>
   </div>
 </section>
 
-<!-- SCANNER PREVIEW -->
+<!-- SCANNER -->
 <section id="scanner" style="padding:60px 28px 88px;background:var(--bg2)">
   <div class="section-max">
     <div class="section-header">
       <div class="eyebrow">Live Scanner</div>
       <h2>Crypto Futures Momentum Scanner</h2>
-      <p>Rolling 5-minute window across Binance USDT-M perpetuals. Crypto only. Stocks excluded.</p>
+      <p>Rolling 5-minute window across Binance USDT-M perpetuals. Crypto only.</p>
     </div>
     <div class="scanner-wrap">
       <div class="scanner-topbar">
@@ -786,9 +776,9 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
               <th>Vol Δ 5m</th><th>Score</th><th>Quote Volume</th>
             </tr></thead>
             <tbody id="scanner-body">
-              <tr><td colspan="7"><div class="loading-state"><div class="spin">⏳</div>
-              <div>Connecting to scanner...</div>
-              <div class="warming-note">⚠ Scores appear after ~10 seconds</div>
+              <tr><td colspan="7"><div class="loading-state">
+                <div class="spin">⏳</div>
+                <div>Connecting to scanner...</div>
               </div></td></tr>
             </tbody>
           </table>
@@ -812,9 +802,9 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
     </div>
     <div class="feat-grid">
       <div class="feat-card"><div class="feat-icon">⚡</div><h3>Crypto Momentum Scanner</h3><p>Detect abnormal price acceleration across 500+ crypto perpetuals. Rolling 5-minute windows updated every 10 seconds via Binance Futures API.</p></div>
-      <div class="feat-card"><div class="feat-icon">📈</div><h3>NSE FNO Scanner</h3><p>Real-time momentum scanner for all 213 NSE FNO stocks. Nifty 50 and Bank Nifty shown as fixed reference rows.</p></div>
+      <div class="feat-card"><div class="feat-icon">📊</div><h3>Multi-Timeframe Analysis</h3><p>Compare momentum across different rolling windows. Identify sustained moves versus short-term spikes with precision.</p></div>
       <div class="feat-card"><div class="feat-icon">🎯</div><h3>Probability Scoring</h3><p>Each instrument receives a composite score based on multi-factor quantitative analysis. Pure data, no subjectivity.</p></div>
-      <div class="feat-card"><div class="feat-icon">🔒</div><h3>Crypto-Only Filter</h3><p>Strict whitelist filtering on Binance. Equity derivatives like NVDA, META, GOOGL are automatically excluded.</p></div>
+      <div class="feat-card"><div class="feat-icon">🔒</div><h3>Crypto-Only Filter</h3><p>Strict whitelist filtering on Binance. Equity derivatives are automatically excluded from crypto scanner results.</p></div>
       <div class="feat-card"><div class="feat-icon">🛡</div><h3>Data Integrity First</h3><p>No simulated or interpolated data. Every number comes directly from exchange APIs with full timestamp transparency.</p></div>
       <div class="feat-card"><div class="feat-icon">🧠</div><h3>Strategies Coming Soon</h3><p>Curated quantitative trading strategies with backtested metrics. Momentum, mean-reversion, and breakout systems.</p></div>
     </div>
@@ -837,8 +827,8 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         <div class="plan-tagline">Full scanner access for 48 hours</div>
         <ul class="plan-features">
           <li><span class="ck">✓</span>Crypto momentum scanner</li>
-          <li><span class="ck">✓</span>NSE FNO scanner</li>
           <li><span class="ck">✓</span>Top 5 results · 10s refresh</li>
+          <li><span class="ck">✓</span>500+ USDT perpetuals</li>
           <li class="off"><span class="xx">✗</span>Extended results (Top 20)</li>
           <li class="off"><span class="xx">✗</span>CSV export</li>
         </ul>
@@ -853,7 +843,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         <ul class="plan-features">
           <li><span class="ck">✓</span>Everything in Free Trial</li>
           <li><span class="ck">✓</span>Top 20 momentum results</li>
-          <li><span class="ck">✓</span>Crypto + NSE FNO scanners</li>
+          <li><span class="ck">✓</span>Crypto scanner · 10s refresh</li>
           <li><span class="ck">✓</span>CSV export</li>
           <li><span class="ck">✓</span>Priority support</li>
         </ul>
@@ -896,55 +886,39 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         </div>
       </div>
       <div class="module-list">
-  <div class="module">
-    <div class="mod-num">01</div>
-    <div>
-      <h4>Market Microstructure &amp; Data</h4>
-      <p>Order types, exchange APIs, data feeds, and how price formation works in electronic markets.</p>
-      <div class="mod-tags">
-        <span class="mod-tag">Exchange APIs</span>
-        <span class="mod-tag">Data Feeds</span>
-        <span class="mod-tag">Order Types</span>
+        <div class="module">
+          <div class="mod-num">01</div>
+          <div>
+            <h4>Market Microstructure &amp; Data</h4>
+            <p>Order types, exchange APIs, data feeds, and how price formation works in electronic markets.</p>
+            <div class="mod-tags"><span class="mod-tag">Exchange APIs</span><span class="mod-tag">Data Feeds</span><span class="mod-tag">Order Types</span></div>
+          </div>
+        </div>
+        <div class="module">
+          <div class="mod-num">02</div>
+          <div>
+            <h4>Strategy Design &amp; Backtesting</h4>
+            <p>Build and test momentum, mean-reversion, and breakout strategies with proper walk-forward validation.</p>
+            <div class="mod-tags"><span class="mod-tag">Momentum</span><span class="mod-tag">Backtesting</span><span class="mod-tag">Walk-forward</span></div>
+          </div>
+        </div>
+        <div class="module">
+          <div class="mod-num">03</div>
+          <div>
+            <h4>Python for Quant Trading</h4>
+            <p>Automate scanners, connect broker APIs, and build rule-based execution systems from scratch.</p>
+            <div class="mod-tags"><span class="mod-tag">Python</span><span class="mod-tag">Broker APIs</span><span class="mod-tag">Automation</span></div>
+          </div>
+        </div>
+        <div class="module">
+          <div class="mod-num">04</div>
+          <div>
+            <h4>Live Session Reviews</h4>
+            <p>Bi-weekly sessions with screen-share walkthroughs, code reviews, and Q&amp;A on real scenarios.</p>
+            <div class="mod-tags"><span class="mod-tag">Live Sessions</span><span class="mod-tag">Code Review</span><span class="mod-tag">Q&amp;A</span></div>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
-  <div class="module">
-    <div class="mod-num">02</div>
-    <div>
-      <h4>Strategy Design &amp; Backtesting</h4>
-      <p>Build and test momentum, mean-reversion, and breakout strategies with proper walk-forward validation.</p>
-      <div class="mod-tags">
-        <span class="mod-tag">Momentum</span>
-        <span class="mod-tag">Backtesting</span>
-        <span class="mod-tag">Walk-forward</span>
-      </div>
-    </div>
-  </div>
-  <div class="module">
-    <div class="mod-num">03</div>
-    <div>
-      <h4>Python for Quant Trading</h4>
-      <p>Automate scanners, connect broker APIs, and build rule-based execution systems from scratch.</p>
-      <div class="mod-tags">
-        <span class="mod-tag">Python</span>
-        <span class="mod-tag">Broker APIs</span>
-        <span class="mod-tag">Automation</span>
-      </div>
-    </div>
-  </div>
-  <div class="module">
-    <div class="mod-num">04</div>
-    <div>
-      <h4>Live Session Reviews</h4>
-      <p>Bi-weekly sessions with screen-share walkthroughs, code reviews, and Q&amp;A on real scenarios.</p>
-      <div class="mod-tags">
-        <span class="mod-tag">Live Sessions</span>
-        <span class="mod-tag">Code Review</span>
-        <span class="mod-tag">Q&amp;A</span>
-      </div>
-    </div>
-  </div>
-</div>
     </div>
     <div class="mentor-form" id="mentorship-form" style="display:none">
       <h3>Apply for Mentorship</h3>
@@ -991,7 +965,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
       </div>
       <div class="test-card">
         <div class="stars">★★★★☆</div>
-        <p>"The data is real and transparent. I use it every morning pre-market for my crypto and NSE watchlist. No black-box nonsense."</p>
+        <p>"The data is real and transparent. I use it every morning pre-market for my crypto watchlist. No black-box nonsense."</p>
         <div class="tester"><div class="avatar" style="background:linear-gradient(135deg,#10b981,#059669)">AM</div><div><strong>Arjun M.</strong><span>Derivatives Trader, Delhi</span></div></div>
       </div>
     </div>
@@ -1025,7 +999,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
         <div class="footer-domain">quantsigma.in</div>
         <div class="disclaimer-box"><strong>⚠ Disclaimer:</strong> QuantSigma is a data analytics platform. Nothing here constitutes investment, trading, or financial advice. Not SEBI registered.</div>
       </div>
-      <div class="footer-col"><h5>Product</h5><a href="#">Crypto Scanner</a><a href="#">NSE FNO Scanner</a><a href="#">Pricing</a><a href="#">Changelog</a></div>
+      <div class="footer-col"><h5>Product</h5><a href="#">Crypto Scanner</a><a href="#">Pricing</a><a href="#">Changelog</a></div>
       <div class="footer-col"><h5>Mentorship</h5><a href="#mentorship">Program Overview</a><a href="#" onclick="openMentorshipForm()">Apply Now</a></div>
       <div class="footer-col"><h5>Company</h5><a href="#">About</a><a href="#">Privacy Policy</a><a href="#">Terms of Service</a><a href="mailto:hello@quantsigma.in">Contact</a></div>
     </div>
@@ -1117,6 +1091,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 28p
 <div class="toast" id="toast"></div>
 
 <script>
+// Modal
 function openModal(t){document.getElementById('overlay').classList.add('open');showAuthSection();switchTab(t);document.body.style.overflow='hidden';}
 function closeModal(){document.getElementById('overlay').classList.remove('open');document.body.style.overflow='';}
 function switchTab(t){
@@ -1128,15 +1103,51 @@ function switchTab(t){
 function showForgotPassword(){document.getElementById('auth-section').style.display='none';document.getElementById('forgot-section').style.display='block';}
 function showAuthSection(){document.getElementById('auth-section').style.display='block';document.getElementById('forgot-section').style.display='none';}
 document.getElementById('overlay').addEventListener('click',e=>{if(e.target.id==='overlay')closeModal();});
+
+// Mentorship form
 function openMentorshipForm(){const f=document.getElementById('mentorship-form');f.style.display='block';setTimeout(()=>f.scrollIntoView({behavior:'smooth',block:'center'}),100);}
+
+// Toast
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3500);}
 function showMsg(el,msg){el.textContent=msg;el.style.display='block';}
 
+// Mobile nav dropdown
+function toggleMobNav(){
+  document.getElementById('mob-nav-dropdown').classList.toggle('open');
+}
+document.addEventListener('click',function(e){
+  const dd=document.getElementById('mob-nav-dropdown');
+  if(!e.target.closest('.mob-nav-dots')&&!e.target.closest('.mob-nav-dropdown')){
+    dd.classList.remove('open');
+  }
+});
+
+// Sync mobile dropdown auth state with main nav
+const _origOnAuth = window._onAuthSync;
+function syncMobNav(loggedIn){
+  const mobDash   = document.getElementById('mob-dashboard');
+  const mobLogin  = document.getElementById('mob-login');
+  const mobSignup = document.getElementById('mob-signup');
+  const mobLogout = document.getElementById('mob-logout');
+  if(loggedIn){
+    if(mobDash)   mobDash.style.display   = 'flex';
+    if(mobLogin)  mobLogin.style.display  = 'none';
+    if(mobSignup) mobSignup.style.display = 'none';
+    if(mobLogout) mobLogout.style.display = 'flex';
+  } else {
+    if(mobDash)   mobDash.style.display   = 'none';
+    if(mobLogin)  mobLogin.style.display  = 'flex';
+    if(mobSignup) mobSignup.style.display = 'flex';
+    if(mobLogout) mobLogout.style.display = 'none';
+  }
+}
+
 // Scanner access control
-let scannerStarted=false;
+let scannerStarted = false;
 function unlockScanner(trialHoursLeft){
   document.getElementById('scanner-gate').style.display='none';
   document.getElementById('scanner-content').style.display='block';
+  syncMobNav(true);
   if(trialHoursLeft){
     const b=document.getElementById('trial-banner');
     b.style.display='flex';
@@ -1147,6 +1158,7 @@ function unlockScanner(trialHoursLeft){
 function lockScanner(reason){
   document.getElementById('scanner-content').style.display='none';
   document.getElementById('trial-banner').style.display='none';
+  if(reason!=='unverified') syncMobNav(reason!=='guest');
   const gate=document.getElementById('scanner-gate');
   gate.style.display='flex';
   if(reason==='guest'){
@@ -1169,7 +1181,7 @@ async function fetchMomentum(){
     document.getElementById('s-total').textContent=d.total||'—';
     document.getElementById('last-ts').textContent='Last updated: '+new Date(d.ts).toLocaleTimeString();
     if(!d.top5||d.top5.length===0){
-      document.getElementById('scanner-body').innerHTML=`<tr><td colspan="7"><div class="loading-state"><div class="spin">⏳</div><div>Building rolling history...</div><div class="warming-note">⚠ Scores appear in ~10 seconds</div></div></td></tr>`;
+      document.getElementById('scanner-body').innerHTML=`<tr><td colspan="7"><div class="loading-state"><div class="spin">⏳</div><div>Building rolling history...</div></div></td></tr>`;
     }else{renderTable(d.top5);}
   }catch(e){
     document.getElementById('scanner-body').innerHTML=`<tr><td colspan="7"><div class="error-state">⚠ ${e.message}</div></td></tr>`;
