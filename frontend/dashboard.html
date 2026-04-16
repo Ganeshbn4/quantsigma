@@ -218,7 +218,6 @@
     const nav = document.getElementById('nav-'+id);
     if (sec) sec.style.display = 'block';
     if (nav) nav.classList.add('active');
-    // close mobile sidebar
     closeMobileSidebar();
   };
 </script>
@@ -236,10 +235,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:var(--bg2)}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
 
 .dash-layout{display:flex;min-height:100vh}
 
-/* ── SIDEBAR ── */
+/* SIDEBAR */
 .sidebar{width:var(--sidebar);min-width:var(--sidebar);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:50;transition:transform .25s ease}
 .sidebar-logo{padding:20px 18px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:10px}
 .logo-row{display:flex;align-items:center;gap:10px}
@@ -256,6 +257,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .nav-icon{font-size:1rem;width:20px;text-align:center}
 .nav-badge{margin-left:auto;background:var(--accent);color:#000;font-size:.6rem;font-weight:800;padding:2px 6px;border-radius:10px}
 .nav-badge-soon{margin-left:auto;background:rgba(245,158,11,.2);color:var(--yellow);font-size:.6rem;font-weight:800;padding:2px 6px;border-radius:10px}
+.nav-badge-new{margin-left:auto;background:var(--accent2);color:#fff;font-size:.6rem;font-weight:800;padding:2px 6px;border-radius:10px}
 .sidebar-user{padding:16px 18px;border-top:1px solid var(--border)}
 .user-card{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .user-initial{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent2),var(--accent));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem;color:#fff;flex-shrink:0}
@@ -269,7 +271,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .logout-btn{width:100%;padding:8px;border-radius:6px;background:transparent;border:1px solid var(--border2);color:var(--text3);font-size:.75rem;cursor:pointer;transition:.15s}
 .logout-btn:hover{border-color:var(--red);color:var(--red)}
 
-/* ── MOBILE TOPBAR ── */
+/* MOBILE TOPBAR */
 .mobile-topbar{display:none;position:fixed;top:0;left:0;right:0;z-index:40;background:rgba(7,9,15,.97);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);height:56px;align-items:center;justify-content:space-between;padding:0 16px}
 .mob-left{display:flex;align-items:center;gap:10px}
 .mob-menu-btn{background:none;border:none;color:var(--text2);font-size:1.3rem;cursor:pointer;padding:6px;line-height:1}
@@ -281,7 +283,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .mob-user-initial{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--accent2),var(--accent));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.75rem;color:#fff}
 .mob-dots-btn{background:none;border:none;color:var(--text2);font-size:1.2rem;cursor:pointer;padding:6px;line-height:1}
 
-/* ── MOBILE DROPDOWN MENU ── */
+/* MOBILE DROPDOWN */
 .mob-dropdown{position:fixed;top:56px;right:12px;z-index:200;background:var(--card);border:1px solid var(--border2);border-radius:10px;min-width:180px;padding:8px 0;display:none;box-shadow:0 8px 32px rgba(0,0,0,.5)}
 .mob-dropdown.open{display:block}
 .mob-dd-user{padding:12px 16px;border-bottom:1px solid var(--border)}
@@ -293,11 +295,11 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .mob-dd-item.danger:hover{background:rgba(255,68,68,.07)}
 .mob-dd-divider{height:1px;background:var(--border);margin:4px 0}
 
-/* ── SIDEBAR OVERLAY (mobile) ── */
+/* SIDEBAR OVERLAY */
 .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:45}
 .sidebar-overlay.open{display:block}
 
-/* ── MAIN ── */
+/* MAIN */
 .dash-main{margin-left:var(--sidebar);flex:1;overflow-y:auto;padding:28px}
 .dash-section{display:none}
 
@@ -328,7 +330,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter'
 .scanner-head-left{display:flex;align-items:center;gap:10px}
 .live-pill{display:flex;align-items:center;gap:4px;font-size:.68rem;font-weight:700;color:var(--green);background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.2);padding:3px 9px;border-radius:4px;text-transform:uppercase}
 .live-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:blink 1.4s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
 .scanner-title{font-size:.85rem;font-weight:700;color:var(--text)}
 .cd{font-size:1rem;font-weight:800;color:var(--green);min-width:24px;text-align:right}
 .cd.warn{color:var(--red)}
@@ -393,7 +394,27 @@ td:first-child,td:nth-child(2){text-align:left}
 .profile-row .label{color:var(--text3);font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
 .profile-row .val{color:var(--text);font-weight:600}
 
-/* ── MOBILE RESPONSIVE ── */
+/* BACKTESTING */
+.bt-row{margin-bottom:10px}
+.bt-row label{display:block;font-size:.7rem;font-weight:600;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}
+.bt-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.bt-input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:7px 10px;color:var(--text);font-size:.82rem;outline:none;transition:.15s;font-family:inherit}
+.bt-input:focus{border-color:var(--accent)}
+.bt-input option{background:var(--bg3)}
+.ind-block{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px}
+.ind-header{display:flex;align-items:center;justify-content:space-between}
+.ind-toggle{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem;font-weight:600;color:var(--text)}
+.ind-toggle input{width:14px;height:14px;accent-color:var(--accent);cursor:pointer}
+.ind-params{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.bt-run-btn{width:100%;padding:14px;background:var(--accent);color:#000;font-size:.95rem;font-weight:800;border:none;border-radius:8px;cursor:pointer;transition:.15s;letter-spacing:.3px;margin-top:16px}
+.bt-run-btn:hover{background:#00d8ff}
+.bt-run-btn:disabled{opacity:.5;cursor:not-allowed}
+.bt-metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px}
+.bt-metric-label{font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.bt-metric-value{font-size:1.2rem;font-weight:800;color:#fff}
+.bt-metric-sub{font-size:.68rem;color:var(--text2);margin-top:2px}
+
+/* MOBILE */
 @media(max-width:768px){
   .sidebar{transform:translateX(-100%)}
   .sidebar.open{transform:translateX(0)}
@@ -405,6 +426,8 @@ td:first-child,td:nth-child(2){text-align:left}
   .dash-topbar{margin-bottom:16px}
   .dash-topbar h1{font-size:1rem}
   .coming-soon{padding:40px 20px}
+  .bt-row2{grid-template-columns:1fr}
+  #backtest-builder > div{grid-template-columns:1fr!important}
 }
 @media(max-width:400px){
   .stats-cards{grid-template-columns:1fr}
@@ -432,10 +455,10 @@ td:first-child,td:nth-child(2){text-align:left}
 <div class="mob-dropdown" id="mob-dropdown">
   <div class="mob-dd-user">
     <div class="mob-dd-name" id="user-name-mob">Loading...</div>
-    <div class="mob-dd-email" id="user-email-mob"></div>
   </div>
   <div class="mob-dd-item" onclick="showSection('overview');toggleMobDropdown()">🏠 Overview</div>
   <div class="mob-dd-item" onclick="showSection('scanner');toggleMobDropdown()">📡 Crypto Scanner</div>
+  <div class="mob-dd-item" onclick="showSection('backtest');toggleMobDropdown()">📊 Backtesting</div>
   <div class="mob-dd-item" onclick="showSection('strategies');toggleMobDropdown()">🧠 Strategies</div>
   <div class="mob-dd-item" onclick="showSection('mentorship');toggleMobDropdown()">🎓 Mentorship</div>
   <div class="mob-dd-item" onclick="showSection('subscription');toggleMobDropdown()">💳 Subscription</div>
@@ -470,12 +493,15 @@ td:first-child,td:nth-child(2){text-align:left}
         <span class="nav-icon">📡</span> Crypto Scanner
         <span class="nav-badge">Live</span>
       </div>
+      <div class="nav-item" id="nav-backtest" onclick="showSection('backtest')">
+        <span class="nav-icon">📊</span> Backtesting
+        <span class="nav-badge-new">New</span>
+      </div>
       <div class="nav-section-label">Coming Soon</div>
       <div class="nav-item" id="nav-strategies" onclick="showSection('strategies')">
         <span class="nav-icon">🧠</span> Strategies
         <span class="nav-badge-soon">Soon</span>
       </div>
-
       <div class="nav-section-label">Learn</div>
       <div class="nav-item" id="nav-mentorship" onclick="showSection('mentorship')">
         <span class="nav-icon">🎓</span> Mentorship
@@ -535,15 +561,21 @@ td:first-child,td:nth-child(2){text-align:left}
           onclick="showSection('scanner')">
           <div style="font-size:1.4rem;margin-bottom:8px">📡</div>
           <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">Crypto Scanner</div>
-          <div style="font-size:.75rem;color:var(--text2)">500+ USDT perpetuals · Live</div>
+          <div style="font-size:.75rem;color:var(--text2)">500+ pairs · Live</div>
         </div>
-
+        <div class="stat-card" style="cursor:pointer;transition:.2s"
+          onmouseover="this.style.borderColor='var(--accent2)'" onmouseout="this.style.borderColor='var(--border)'"
+          onclick="showSection('backtest')">
+          <div style="font-size:1.4rem;margin-bottom:8px">📊</div>
+          <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">Backtesting</div>
+          <div style="font-size:.75rem;color:var(--accent2)">BTC · ETH · New!</div>
+        </div>
         <div class="stat-card" style="cursor:pointer;transition:.2s"
           onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
           onclick="showSection('mentorship')">
           <div style="font-size:1.4rem;margin-bottom:8px">🎓</div>
           <div style="font-size:.88rem;font-weight:700;color:#fff;margin-bottom:4px">Mentorship</div>
-          <div style="font-size:.75rem;color:var(--text2)">Programs · Sessions · Apply</div>
+          <div style="font-size:.75rem;color:var(--text2)">Programs · Apply</div>
         </div>
         <div class="stat-card" style="cursor:pointer;transition:.2s"
           onmouseover="this.style.borderColor='var(--yellow)'" onmouseout="this.style.borderColor='var(--border)'"
@@ -558,7 +590,7 @@ td:first-child,td:nth-child(2){text-align:left}
     <!-- CRYPTO SCANNER -->
     <div class="dash-section" id="section-scanner">
       <div class="dash-topbar">
-        <div><h1>📡 Crypto Futures Scanner</h1><p>Binance USDT-M Perpetuals · Real-time momentum · Crypto only</p></div>
+        <div><h1>📡 Crypto Futures Scanner</h1><p>Binance USDT-M Perpetuals · Real-time momentum</p></div>
         <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--text2)">
           Refreshes in <span class="cd" id="dash-cd">10</span>s
         </div>
@@ -606,7 +638,267 @@ td:first-child,td:nth-child(2){text-align:left}
       </div>
     </div>
 
+    <!-- BACKTESTING -->
+    <div class="dash-section" id="section-backtest">
+      <div class="dash-topbar">
+        <div><h1>📊 Backtesting</h1><p>Test your strategy on historical BTC & ETH 1-minute data</p></div>
+      </div>
 
+      <!-- Builder -->
+      <div id="backtest-builder">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+
+          <!-- Left: Config -->
+          <div class="scanner-card" style="padding:20px;overflow:visible">
+            <div style="font-size:.78rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.8px;margin-bottom:16px">⚙ Strategy Config</div>
+            <div class="bt-row">
+              <label>Coin</label>
+              <select id="bt-symbol" class="bt-input">
+                <option value="BTCUSDT">Bitcoin (BTCUSDT)</option>
+                <option value="ETHUSDT">Ethereum (ETHUSDT)</option>
+              </select>
+            </div>
+            <div class="bt-row">
+              <label>Direction</label>
+              <select id="bt-direction" class="bt-input">
+                <option value="long">Long (Buy)</option>
+                <option value="short">Short (Sell)</option>
+              </select>
+            </div>
+            <div class="bt-row2">
+              <div class="bt-row"><label>Start Date</label><input type="date" id="bt-start" class="bt-input" value="2025-04-16"/></div>
+              <div class="bt-row"><label>End Date</label><input type="date" id="bt-end" class="bt-input" value="2025-04-17"/></div>
+            </div>
+            <div class="bt-row2">
+              <div class="bt-row"><label>Capital (₹)</label><input type="number" id="bt-capital" class="bt-input" value="10000"/></div>
+              <div class="bt-row"><label>Risk per Trade %</label><input type="number" id="bt-risk" class="bt-input" value="2" step="0.5"/></div>
+            </div>
+            <div class="bt-row2">
+              <div class="bt-row"><label>Take Profit %</label><input type="number" id="bt-tp" class="bt-input" value="2" step="0.1"/></div>
+              <div class="bt-row"><label>Stop Loss %</label><input type="number" id="bt-sl" class="bt-input" value="1" step="0.1"/></div>
+            </div>
+            <div class="bt-row2">
+              <div class="bt-row">
+                <label>Leverage</label>
+                <select id="bt-leverage" class="bt-input">
+                  <option value="1">1x</option>
+                  <option value="2">2x</option>
+                  <option value="3">3x</option>
+                  <option value="5">5x</option>
+                  <option value="10">10x</option>
+                </select>
+              </div>
+              <div class="bt-row"><label>Trailing Stop %</label><input type="number" id="bt-trail" class="bt-input" placeholder="Optional" step="0.1"/></div>
+            </div>
+            <div class="bt-row2">
+              <div class="bt-row"><label>Fee per side %</label><input type="number" id="bt-fee" class="bt-input" value="0.05" step="0.01"/></div>
+              <div class="bt-row"><label>Slippage %</label><input type="number" id="bt-slip" class="bt-input" value="0.05" step="0.01"/></div>
+            </div>
+            <div class="bt-row"><label>Exit after N candles</label><input type="number" id="bt-exitafter" class="bt-input" placeholder="Optional (e.g. 60)"/></div>
+          </div>
+
+          <!-- Right: Entry Conditions -->
+          <div class="scanner-card" style="padding:20px;overflow:visible">
+            <div style="font-size:.78rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">📡 Entry Conditions</div>
+            <p style="font-size:.72rem;color:var(--text3);margin-bottom:14px">All enabled conditions must be true (AND logic)</p>
+
+            <!-- RSI -->
+            <div class="ind-block">
+              <div class="ind-header"><label class="ind-toggle"><input type="checkbox" id="en-rsi" checked/><span>RSI</span></label></div>
+              <div class="ind-params" id="p-rsi">
+                <div class="bt-row2">
+                  <div class="bt-row"><label>Period</label><input type="number" id="rsi-period" class="bt-input" value="14"/></div>
+                  <div class="bt-row"><label>Condition</label>
+                    <select id="rsi-cond" class="bt-input">
+                      <option value="oversold">Oversold (below level)</option>
+                      <option value="overbought">Overbought (above level)</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="bt-row"><label>Level</label><input type="number" id="rsi-level" class="bt-input" value="30"/></div>
+              </div>
+            </div>
+
+            <!-- MA Cross -->
+            <div class="ind-block">
+              <div class="ind-header"><label class="ind-toggle"><input type="checkbox" id="en-ma"/><span>MA Crossover</span></label></div>
+              <div class="ind-params" id="p-ma" style="display:none">
+                <div class="bt-row2">
+                  <div class="bt-row"><label>Fast Period</label><input type="number" id="ma-fast" class="bt-input" value="9"/></div>
+                  <div class="bt-row"><label>Slow Period</label><input type="number" id="ma-slow" class="bt-input" value="21"/></div>
+                </div>
+                <div class="bt-row"><label>Direction</label>
+                  <select id="ma-dir" class="bt-input">
+                    <option value="up">Fast crosses above Slow (Bullish)</option>
+                    <option value="down">Fast crosses below Slow (Bearish)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- EMA Cross -->
+            <div class="ind-block">
+              <div class="ind-header"><label class="ind-toggle"><input type="checkbox" id="en-ema"/><span>EMA Crossover</span></label></div>
+              <div class="ind-params" id="p-ema" style="display:none">
+                <div class="bt-row2">
+                  <div class="bt-row"><label>Fast Period</label><input type="number" id="ema-fast" class="bt-input" value="9"/></div>
+                  <div class="bt-row"><label>Slow Period</label><input type="number" id="ema-slow" class="bt-input" value="21"/></div>
+                </div>
+                <div class="bt-row"><label>Direction</label>
+                  <select id="ema-dir" class="bt-input">
+                    <option value="up">Fast crosses above Slow (Bullish)</option>
+                    <option value="down">Fast crosses below Slow (Bearish)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- MACD -->
+            <div class="ind-block">
+              <div class="ind-header"><label class="ind-toggle"><input type="checkbox" id="en-macd"/><span>MACD</span></label></div>
+              <div class="ind-params" id="p-macd" style="display:none">
+                <div class="bt-row"><label>Direction</label>
+                  <select id="macd-dir" class="bt-input">
+                    <option value="up">MACD crosses above Signal (Bullish)</option>
+                    <option value="down">MACD crosses below Signal (Bearish)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stochastic -->
+            <div class="ind-block">
+              <div class="ind-header"><label class="ind-toggle"><input type="checkbox" id="en-stoch"/><span>Stochastic</span></label></div>
+              <div class="ind-params" id="p-stoch" style="display:none">
+                <div class="bt-row2">
+                  <div class="bt-row"><label>K Period</label><input type="number" id="stoch-k" class="bt-input" value="14"/></div>
+                  <div class="bt-row"><label>Level</label><input type="number" id="stoch-level" class="bt-input" value="20"/></div>
+                </div>
+                <div class="bt-row"><label>Condition</label>
+                  <select id="stoch-cond" class="bt-input">
+                    <option value="oversold">Oversold + K crosses D up</option>
+                    <option value="overbought">Overbought + K crosses D down</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- VWAP -->
+            <div class="ind-block">
+              <div class="ind-header"><label class="ind-toggle"><input type="checkbox" id="en-vwap"/><span>VWAP</span></label></div>
+              <div class="ind-params" id="p-vwap" style="display:none">
+                <div class="bt-row"><label>Direction</label>
+                  <select id="vwap-dir" class="bt-input">
+                    <option value="above">Price crosses above VWAP</option>
+                    <option value="below">Price crosses below VWAP</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bollinger Bands -->
+            <div class="ind-block">
+              <div class="ind-header"><label class="ind-toggle"><input type="checkbox" id="en-bb"/><span>Bollinger Bands</span></label></div>
+              <div class="ind-params" id="p-bb" style="display:none">
+                <div class="bt-row"><label>Condition</label>
+                  <select id="bb-cond" class="bt-input">
+                    <option value="touch_lower">Price touches lower band (oversold)</option>
+                    <option value="touch_upper">Price touches upper band (overbought)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Fibonacci -->
+            <div class="ind-block">
+              <div class="ind-header"><label class="ind-toggle"><input type="checkbox" id="en-fib"/><span>Fibonacci Retracement</span></label></div>
+              <div class="ind-params" id="p-fib" style="display:none">
+                <div class="bt-row"><label>Level</label>
+                  <select id="fib-level" class="bt-input">
+                    <option value="fib236">23.6%</option>
+                    <option value="fib382">38.2%</option>
+                    <option value="fib500" selected>50%</option>
+                    <option value="fib618">61.8%</option>
+                    <option value="fib786">78.6%</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Volume Spike -->
+            <div class="ind-block">
+              <div class="ind-header"><label class="ind-toggle"><input type="checkbox" id="en-vol"/><span>Volume Spike</span></label></div>
+              <div class="ind-params" id="p-vol" style="display:none">
+                <div class="bt-row"><label>Spike % above average</label><input type="number" id="vol-thresh" class="bt-input" value="150"/></div>
+              </div>
+            </div>
+
+            <!-- Price Change -->
+            <div class="ind-block">
+              <div class="ind-header"><label class="ind-toggle"><input type="checkbox" id="en-pc"/><span>Price Change %</span></label></div>
+              <div class="ind-params" id="p-pc" style="display:none">
+                <div class="bt-row2">
+                  <div class="bt-row"><label>Last N candles</label><input type="number" id="pc-candles" class="bt-input" value="5"/></div>
+                  <div class="bt-row"><label>Threshold %</label><input type="number" id="pc-thresh" class="bt-input" value="0.5" step="0.1"/></div>
+                </div>
+                <div class="bt-row"><label>Direction</label>
+                  <select id="pc-dir" class="bt-input">
+                    <option value="up">Up (bullish)</option>
+                    <option value="down">Down (bearish)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <button class="bt-run-btn" id="bt-run-btn" onclick="runBacktest()">▶ Run Backtest</button>
+        <div id="bt-error" style="display:none;color:var(--red);font-size:.82rem;margin-top:10px;text-align:center;padding:10px;background:rgba(255,68,68,.07);border:1px solid rgba(255,68,68,.15);border-radius:6px"></div>
+      </div>
+
+      <!-- Loading -->
+      <div id="backtest-loading" style="display:none;text-align:center;padding:80px 20px">
+        <div style="font-size:2.5rem;margin-bottom:16px;display:inline-block;animation:spin 1s linear infinite">⏳</div>
+        <div style="font-size:1rem;font-weight:700;color:#fff;margin-bottom:8px">Running backtest...</div>
+        <div style="font-size:.78rem;color:var(--text2)">Fetching candles and calculating signals</div>
+      </div>
+
+      <!-- Results -->
+      <div id="backtest-results" style="display:none">
+        <button onclick="resetBacktest()" style="background:transparent;border:1px solid var(--border2);color:var(--text2);padding:8px 16px;border-radius:6px;cursor:pointer;font-size:.8rem;margin-bottom:20px">← Run Another Backtest</button>
+
+        <!-- Metrics grid -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px" id="bt-metrics-grid"></div>
+
+        <!-- Capital summary -->
+        <div class="scanner-card" style="padding:20px;margin-bottom:16px" id="bt-capital-card"></div>
+
+        <!-- Equity curve -->
+        <div class="scanner-card" style="padding:20px;margin-bottom:16px">
+          <div style="font-size:.8rem;font-weight:700;color:var(--text);margin-bottom:14px">📈 Equity Curve</div>
+          <canvas id="equity-chart" height="200" style="width:100%"></canvas>
+        </div>
+
+        <!-- Trade log -->
+        <div class="scanner-card" style="overflow:hidden;margin-bottom:16px">
+          <div style="padding:14px 18px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:.8rem;font-weight:700;color:var(--text)">📋 Trade Log</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th style="text-align:left">#</th>
+                <th style="text-align:left">Entry Time</th>
+                <th style="text-align:left">Exit Time</th>
+                <th>Entry $</th><th>Exit $</th>
+                <th>Gross P&L%</th><th>Fees</th><th>Slip</th>
+                <th>Net P&L</th><th>Reason</th><th>Capital</th>
+              </tr></thead>
+              <tbody id="bt-trade-log"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- STRATEGIES -->
     <div class="dash-section" id="section-strategies">
@@ -626,7 +918,7 @@ td:first-child,td:nth-child(2){text-align:left}
         <div class="mentor-card">
           <span class="tag tag-live">● Live</span>
           <h4 style="margin-top:10px">Next Cohort — April 2026</h4>
-          <p>Applications open for the April 2026 cohort. Limited to 15 seats. Structured 6-week program.</p>
+          <p>Applications open for the April 2026 cohort. Limited to 15 seats.</p>
           <button class="btn-primary" style="font-size:.78rem;padding:8px 16px" onclick="window.location.href='index.html#mentorship'">Apply Now</button>
         </div>
         <div class="mentor-card">
@@ -635,16 +927,8 @@ td:first-child,td:nth-child(2){text-align:left}
           <p>Market microstructure, strategy design, Python automation, and live session reviews. 4 modules over 6 weeks.</p>
           <button class="btn-primary" style="font-size:.78rem;padding:8px 16px;background:var(--bg3);color:var(--text2);border:1px solid var(--border2)" onclick="window.location.href='index.html#mentorship'">View Curriculum</button>
         </div>
-        <div class="mentor-card">
-          <span class="tag tag-soon">Coming Soon</span>
-          <h4 style="margin-top:10px">Recorded Sessions</h4>
-          <p>Past live session recordings available for Elite subscribers to replay on demand.</p>
-        </div>
-        <div class="mentor-card">
-          <span class="tag tag-soon">Coming Soon</span>
-          <h4 style="margin-top:10px">Strategy Reviews</h4>
-          <p>Submit your strategy for a detailed code and logic review. Available to Elite plan members.</p>
-        </div>
+        <div class="mentor-card"><span class="tag tag-soon">Coming Soon</span><h4 style="margin-top:10px">Recorded Sessions</h4><p>Past live session recordings for Elite subscribers.</p></div>
+        <div class="mentor-card"><span class="tag tag-soon">Coming Soon</span><h4 style="margin-top:10px">Strategy Reviews</h4><p>Submit your strategy for detailed code and logic review.</p></div>
       </div>
     </div>
 
@@ -686,7 +970,9 @@ td:first-child,td:nth-child(2){text-align:left}
 </div>
 
 <script>
-// Mobile sidebar toggle
+const RAILWAY_URL = 'https://api.quantsigma.in';
+
+// Mobile sidebar
 function toggleMobileSidebar() {
   document.getElementById('sidebar').classList.toggle('open');
   document.getElementById('sidebar-overlay').classList.toggle('open');
@@ -696,11 +982,10 @@ function closeMobileSidebar() {
   document.getElementById('sidebar-overlay').classList.remove('open');
 }
 
-// Mobile dropdown (3 dots)
+// Mobile dropdown
 function toggleMobDropdown() {
   document.getElementById('mob-dropdown').classList.toggle('open');
 }
-// Close dropdown when clicking outside
 document.addEventListener('click', function(e) {
   const dd  = document.getElementById('mob-dropdown');
   const btn = document.querySelector('.mob-dots-btn');
@@ -709,12 +994,187 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// Also update mob email
-const origRender = window.renderUserInfo;
-document.addEventListener('DOMContentLoaded', () => {
-  const emailMob = document.getElementById('user-email-mob');
-  // Will be populated by Firebase onAuthStateChanged
+// ── BACKTESTING ───────────────────────────────────────────
+
+// Toggle indicator params
+['rsi','ma','ema','macd','stoch','vwap','bb','fib','vol','pc'].forEach(id => {
+  const cb = document.getElementById('en-'+id);
+  if (cb) cb.addEventListener('change', () => {
+    const p = document.getElementById('p-'+id);
+    if (p) p.style.display = cb.checked ? 'block' : 'none';
+  });
 });
+
+function buildConfig() {
+  const entry = {};
+  if (document.getElementById('en-rsi').checked) {
+    entry.rsi = { enabled:true, period:parseInt(document.getElementById('rsi-period').value), condition:document.getElementById('rsi-cond').value, level:parseFloat(document.getElementById('rsi-level').value) };
+  }
+  if (document.getElementById('en-ma').checked) {
+    entry.maCross = { enabled:true, fastPeriod:parseInt(document.getElementById('ma-fast').value), slowPeriod:parseInt(document.getElementById('ma-slow').value), direction:document.getElementById('ma-dir').value };
+  }
+  if (document.getElementById('en-ema').checked) {
+    entry.emaCross = { enabled:true, fastPeriod:parseInt(document.getElementById('ema-fast').value), slowPeriod:parseInt(document.getElementById('ema-slow').value), direction:document.getElementById('ema-dir').value };
+  }
+  if (document.getElementById('en-macd').checked) {
+    entry.macd = { enabled:true, direction:document.getElementById('macd-dir').value };
+  }
+  if (document.getElementById('en-stoch').checked) {
+    entry.stochastic = { enabled:true, kPeriod:parseInt(document.getElementById('stoch-k').value), level:parseFloat(document.getElementById('stoch-level').value), condition:document.getElementById('stoch-cond').value };
+  }
+  if (document.getElementById('en-vwap').checked) {
+    entry.vwap = { enabled:true, direction:document.getElementById('vwap-dir').value };
+  }
+  if (document.getElementById('en-bb').checked) {
+    entry.bollinger = { enabled:true, condition:document.getElementById('bb-cond').value };
+  }
+  if (document.getElementById('en-fib').checked) {
+    entry.fibonacci = { enabled:true, level:document.getElementById('fib-level').value };
+  }
+  if (document.getElementById('en-vol').checked) {
+    entry.volumeSpike = { enabled:true, threshold:parseFloat(document.getElementById('vol-thresh').value) };
+  }
+  if (document.getElementById('en-pc').checked) {
+    entry.priceChange = { enabled:true, candles:parseInt(document.getElementById('pc-candles').value), threshold:parseFloat(document.getElementById('pc-thresh').value), direction:document.getElementById('pc-dir').value };
+  }
+  return {
+    capital:      parseFloat(document.getElementById('bt-capital').value),
+    riskPerTrade: parseFloat(document.getElementById('bt-risk').value),
+    leverage:     parseInt(document.getElementById('bt-leverage').value),
+    takeProfit:   parseFloat(document.getElementById('bt-tp').value),
+    stopLoss:     parseFloat(document.getElementById('bt-sl').value),
+    trailingStop: document.getElementById('bt-trail').value ? parseFloat(document.getElementById('bt-trail').value) : null,
+    exitAfter:    document.getElementById('bt-exitafter').value ? parseInt(document.getElementById('bt-exitafter').value) : null,
+    feePerSide:   parseFloat(document.getElementById('bt-fee').value),
+    slippage:     parseFloat(document.getElementById('bt-slip').value),
+    direction:    document.getElementById('bt-direction').value,
+    entry
+  };
+}
+
+async function runBacktest() {
+  const err       = document.getElementById('bt-error');
+  const btn       = document.getElementById('bt-run-btn');
+  err.style.display = 'none';
+  const symbol    = document.getElementById('bt-symbol').value;
+  const startDate = document.getElementById('bt-start').value;
+  const endDate   = document.getElementById('bt-end').value;
+  if (!startDate||!endDate)  { err.textContent='Please select start and end dates.'; err.style.display='block'; return; }
+  if (startDate >= endDate)  { err.textContent='End date must be after start date.'; err.style.display='block'; return; }
+  btn.disabled = true;
+  document.getElementById('backtest-builder').style.display = 'none';
+  document.getElementById('backtest-loading').style.display = 'block';
+  document.getElementById('backtest-results').style.display = 'none';
+  try {
+    const res  = await fetch(`${RAILWAY_URL}/api/backtest`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ symbol, startDate, endDate, config: buildConfig() })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Backtest failed');
+    renderResults(data);
+  } catch(e) {
+    document.getElementById('backtest-builder').style.display = 'block';
+    document.getElementById('backtest-loading').style.display = 'none';
+    err.textContent = '⚠ ' + e.message;
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function resetBacktest() {
+  document.getElementById('backtest-builder').style.display  = 'block';
+  document.getElementById('backtest-loading').style.display  = 'none';
+  document.getElementById('backtest-results').style.display  = 'none';
+}
+
+function renderResults(data) {
+  document.getElementById('backtest-loading').style.display = 'none';
+  document.getElementById('backtest-results').style.display = 'block';
+  const m = data.metrics;
+
+  // Metrics
+  const metrics = [
+    { label:'Total Trades',  value:m.totalTrades,                              sub:`${m.winningTrades}W / ${m.losingTrades}L` },
+    { label:'Win Rate',      value:m.winRate+'%',                              sub:'of all trades',        color:m.winRate>=50?'var(--green)':'var(--red)' },
+    { label:'Total Return',  value:(m.totalReturn>=0?'+':'')+m.totalReturn+'%',sub:'net of fees',          color:m.totalReturn>=0?'var(--green)':'var(--red)' },
+    { label:'Max Drawdown',  value:'-'+m.maxDrawdown+'%',                      sub:'worst peak to trough', color:'var(--red)' },
+    { label:'Sharpe Ratio',  value:m.sharpeRatio,                              sub:'>1 is good',           color:m.sharpeRatio>=1?'var(--green)':'var(--yellow)' },
+    { label:'Profit Factor', value:m.profitFactor,                             sub:'>1.5 is good',         color:m.profitFactor>=1.5?'var(--green)':'var(--yellow)' },
+    { label:'Avg Win',       value:'+'+m.avgWin+'%',                           sub:'per winning trade',    color:'var(--green)' },
+    { label:'Avg Loss',      value:m.avgLoss+'%',                              sub:'per losing trade',     color:'var(--red)' },
+    { label:'Best Trade',    value:'+'+m.bestTrade+'%',                        sub:'single trade',         color:'var(--green)' },
+    { label:'Worst Trade',   value:m.worstTrade+'%',                           sub:'single trade',         color:'var(--red)' },
+  ];
+  document.getElementById('bt-metrics-grid').innerHTML = metrics.map(mt =>
+    `<div class="bt-metric-card">
+      <div class="bt-metric-label">${mt.label}</div>
+      <div class="bt-metric-value" style="color:${mt.color||'#fff'}">${mt.value}</div>
+      <div class="bt-metric-sub">${mt.sub}</div>
+    </div>`
+  ).join('');
+
+  // Capital
+  const profit = m.netProfit >= 0;
+  document.getElementById('bt-capital-card').innerHTML = `
+    <div style="font-size:.8rem;font-weight:700;color:var(--text);margin-bottom:14px">💰 Capital Summary</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px">
+      <div><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;margin-bottom:4px">Start</div><div style="font-size:1.05rem;font-weight:800;color:#fff">₹${m.startCapital.toLocaleString()}</div></div>
+      <div><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;margin-bottom:4px">Final</div><div style="font-size:1.05rem;font-weight:800;color:${profit?'var(--green)':'var(--red)'}">₹${m.finalCapital.toLocaleString()}</div></div>
+      <div><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;margin-bottom:4px">Gross Profit</div><div style="font-size:1.05rem;font-weight:800;color:#fff">₹${m.grossProfit.toFixed(2)}</div></div>
+      <div><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;margin-bottom:4px">Total Fees</div><div style="font-size:1.05rem;font-weight:800;color:var(--red)">-₹${m.totalFees.toFixed(2)}</div></div>
+      <div><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;margin-bottom:4px">Slippage</div><div style="font-size:1.05rem;font-weight:800;color:var(--red)">-₹${m.totalSlippage.toFixed(2)}</div></div>
+      <div><div style="font-size:.65rem;color:var(--text3);text-transform:uppercase;margin-bottom:4px">Net Profit</div><div style="font-size:1.05rem;font-weight:800;color:${profit?'var(--green)':'var(--red)'}">${profit?'+':''}₹${m.netProfit.toFixed(2)}</div></div>
+    </div>`;
+
+  // Equity curve
+  const canvas = document.getElementById('equity-chart');
+  const ctx    = canvas.getContext('2d');
+  const curve  = data.equityCurve;
+  const W      = canvas.parentElement.clientWidth - 40 || 700;
+  const H      = 200;
+  canvas.width  = W;
+  canvas.height = H;
+  const capitals = curve.map(p => p.capital);
+  const minC = Math.min(...capitals), maxC = Math.max(...capitals);
+  const range = maxC - minC || 1;
+  ctx.clearRect(0,0,W,H);
+  // Grid
+  ctx.strokeStyle='rgba(26,34,53,0.8)'; ctx.lineWidth=1;
+  for (let i=0;i<=4;i++){const y=(i/4)*H;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  // Line
+  ctx.beginPath(); ctx.strokeStyle=profit?'#00e676':'#ff4444'; ctx.lineWidth=2;
+  curve.forEach((pt,i)=>{
+    const x=(i/(curve.length-1))*W;
+    const y=H-((pt.capital-minC)/range)*(H-20)-10;
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+  // Fill
+  ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.closePath();
+  ctx.fillStyle=profit?'rgba(0,230,118,0.06)':'rgba(255,68,68,0.06)';ctx.fill();
+
+  // Trade log
+  document.getElementById('bt-trade-log').innerHTML = data.trades.map(t => {
+    const win = t.netPnl>0;
+    const rc  = t.exitReason==='TP'?'var(--green)':t.exitReason==='SL'?'var(--red)':'var(--yellow)';
+    return `<tr>
+      <td style="text-align:left;font-weight:700">${t.id}</td>
+      <td style="text-align:left;font-size:.72rem;color:var(--text2)">${new Date(t.entryTime).toLocaleString()}</td>
+      <td style="text-align:left;font-size:.72rem;color:var(--text2)">${new Date(t.exitTime).toLocaleString()}</td>
+      <td>$${t.entryPrice.toLocaleString()}</td>
+      <td>$${t.exitPrice.toLocaleString()}</td>
+      <td><span class="chg ${t.grossPnlPct>=0?'up':'dn'}">${t.grossPnlPct>=0?'+':''}${t.grossPnlPct.toFixed(2)}%</span></td>
+      <td style="color:var(--red);font-size:.75rem">-₹${t.feeCost.toFixed(2)}</td>
+      <td style="color:var(--red);font-size:.75rem">-₹${t.slippageCost.toFixed(2)}</td>
+      <td style="font-weight:700;color:${win?'var(--green)':'var(--red)'}">${win?'+':''}₹${t.netPnl.toFixed(2)}</td>
+      <td><span style="font-size:.7rem;font-weight:700;color:${rc};background:${rc}15;border:1px solid ${rc}40;padding:2px 7px;border-radius:4px">${t.exitReason}</span></td>
+      <td style="color:var(--text2)">₹${t.capital.toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+}
 </script>
 </body>
 </html>
